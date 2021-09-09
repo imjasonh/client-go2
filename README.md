@@ -1,8 +1,8 @@
 # Experimenting with `go-client` and Go generics
 
-This is an experimental type-parameter-aware client that wraps [`k8s.io/client-go/dynamic`](https://pkg.go.dev/k8s.io/client-go/dynamic).
+This is an experimental type-parameter-aware client that wraps [`k8s.io/client-go/dynamic`](https://pkg.go.dev/k8s.io/client-go/dynamic) _(...for now)_.
 
-Until Go 1.18 is released, use [`gotip`](https://pkg.go.dev/golang.org/dl/gotip)
+Until Go 1.18 is released, use [`gotip`](https://pkg.go.dev/golang.org/dl/gotip).
 
 Assuming you've got a working kubeconfig (does `kubectl get pods` work?), you can run this code:
 
