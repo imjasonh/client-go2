@@ -34,6 +34,7 @@ func (c client[T]) gvr() schema.GroupVersionResource {
 	// BOOM!
 	// This panics because T is a nil *corev1.Pod; the runtime.Object interface is only satisfied by *corev1.Pod, not the instantiable corev1.Pod.
 	// https://go.googlesource.com/proposal/+/refs/heads/master/design/43651-type-parameters.md#pointer-method-example
+	// https://go.googlesource.com/proposal/+/refs/heads/master/design/43651-type-parameters.md#no-way-to-require-pointer-methods
 	var t T
 	gvk := t.GetObjectKind().GroupVersionKind()
 	return schema.GroupVersionResource{
