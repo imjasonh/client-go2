@@ -6,6 +6,7 @@ import (
 	"context"
 	"log"
 
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
@@ -22,6 +23,7 @@ func main() {
 		log.Fatalf("ClientConfig: %v", err)
 	}
 
+	// List pods in kube-system.
 	pods, err := NewClient[pod](config).List(ctx, "kube-system")
 	if err != nil { log.Fatal("listing pods:", err) }
 	log.Println("PODS")
@@ -29,7 +31,19 @@ func main() {
 		log.Println("-", p.Name)
 	}
 
-	cms, err := NewClient[cm](config).List(ctx, "kube-system")
+	// Create a ConfigMap, then list ConfigMaps.
+	cmc := NewClient[cm](config)
+	if err := cmc.Create(ctx, "kube-system",cm{
+		ObjectMeta: metav1.ObjectMeta{
+			GenerateName: "foo-",
+		},
+		Data: map[string]string{
+			"hello": "world",
+		},
+	}); err != nil {
+		log.Fatal("creating configmap:", err)
+	}
+	cms, err := cmc.List(ctx, "kube-system")
 	if err != nil { log.Fatal("listing configmaps:", err) }
 	log.Println("CONFIGMAPS")
 	for _, cm := range cms {
@@ -63,6 +77,37 @@ func (c client[T]) List(ctx context.Context, namespace string) ([]T, error) {
 	}
 	return out, nil
 }
+
+func (c client[T]) Get(ctx context.Context, namespace, name string) (*T, error) {
+	var t T
+	u, err := c.dyn.Resource(t.GVR()).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return nil, err
+	}
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(u.Object); err != nil { return nil, err }
+	if err := json.NewDecoder(&buf).Decode(&t); err != nil { return nil, err }
+	return &t, nil
+}
+
+func (c client[T]) Create(ctx context.Context, namespace string, t T) error {
+	m := map[string]interface{}{}
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(t); err != nil { return err }
+	if err := json.NewDecoder(&buf).Decode(&m); err != nil { return err }
+	u := &unstructured.Unstructured{Object:m}
+	_, err := c.dyn.Resource(t.GVR()).Namespace(namespace).Create(ctx, u, metav1.CreateOptions{})
+	return err
+}
+
+// THESE ARE HACKS
+//
+// Ideally, the Pod type (or any runtime.Object) would be able to give us its
+// GVR directly, then the obj interface / type constraint would just be
+// runtime.Object.
+//
+// Since it can't, we have to wrap runtime.Object and provide these per-type.
+// This would be really nice to fix.
 
 type pod corev1.Pod
 func (pod pod) GetObjectKind() schema.ObjectKind { return pod.GetObjectKind() }
