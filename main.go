@@ -8,7 +8,21 @@ import (
 	"github.com/imjasonh/client-go2/generic"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/tools/clientcmd"
+)
+
+var (
+	podGVR = schema.GroupVersionResource{
+		Group:    "",
+		Version:  "v1",
+		Resource: "pods",
+	}
+	cmGVR = schema.GroupVersionResource{
+		Group:    "",
+		Version:  "v1",
+		Resource: "configmaps",
+	}
 )
 
 func main() {
@@ -24,7 +38,7 @@ func main() {
 	}
 
 	// List pods in kube-system.
-	pods, err := generic.NewClient[*corev1.Pod](config).List(ctx, "kube-system")
+	pods, err := generic.NewClient[corev1.Pod](podGVR, config).List(ctx, "kube-system")
 	if err != nil {
 		log.Fatal("listing pods:", err)
 	}
@@ -34,8 +48,8 @@ func main() {
 	}
 
 	// Create a ConfigMap, then list ConfigMaps.
-	cmc := generic.NewClient[*corev1.ConfigMap](config)
-	if err := cmc.Create(ctx, "kube-system", &corev1.ConfigMap{
+	cmc := generic.NewClient[corev1.ConfigMap](cmGVR, config)
+	if err := cmc.Create(ctx, "kube-system", corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: "foo-",
 		},
