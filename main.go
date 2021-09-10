@@ -38,7 +38,7 @@ func main() {
 	}
 
 	// List pods in kube-system.
-	pods, err := generic.NewClient[corev1.Pod](podGVR, config).List(ctx, "kube-system")
+	pods, err := generic.NewClient[*corev1.Pod](podGVR, config).List(ctx, "kube-system")
 	if err != nil {
 		log.Fatal("listing pods:", err)
 	}
@@ -48,8 +48,8 @@ func main() {
 	}
 
 	// Create a ConfigMap, then list ConfigMaps.
-	cmc := generic.NewClient[corev1.ConfigMap](cmGVR, config)
-	if err := cmc.Create(ctx, "kube-system", corev1.ConfigMap{
+	cmc := generic.NewClient[*corev1.ConfigMap](cmGVR, config)
+	if err := cmc.Create(ctx, "kube-system", &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: "foo-",
 		},

@@ -6,21 +6,34 @@ import (
 	"encoding/json"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-
-func NewClient[T any](gvr schema.GroupVersionResource, config *rest.Config) client[T] {
+// Ideally, this wouldn't need to take a GVR, and it could just be inferred
+// from the runtime.Object type given.
+//
+// In practice, this doesn't seem to be straightforward. :(
+//
+// Things that implement runtime.Object tend to be pointer types (e.g.,
+// *corev1.Pod), which means T is nil, and we can't call GetObjectKind() on it
+// to start to guess at the GVR.
+//
+// It might be possible to use schemes to lookup the GVR for a given Go type
+// (assuming it's been registered), which could let us get rid of this.
+// In the meantime, taking a GVR removes ambiguity at the cost of verbosity.
+// /shrug
+func NewClient[T runtime.Object](gvr schema.GroupVersionResource, config *rest.Config) client[T] {
 	return client[T] {
 		gvr: gvr,
 		dyn: dynamic.NewForConfigOrDie(config),
 	}
 }
 
-type client[T any] struct {
+type client[T runtime.Object] struct {
 	gvr schema.GroupVersionResource
 	dyn dynamic.Interface // TODO: don't depend on dynamic client
 }
