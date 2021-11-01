@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"log"
 
 	"github.com/imjasonh/client-go2/generic"
@@ -26,11 +25,6 @@ var (
 )
 
 func main() {
-	// This is load bearing...
-	// Without this, while the client is in generic/, I get a mysterious compiler error:
-	// "internal compiler error: missing import reader for json.NewEncoder"
-	_ = json.NewEncoder(nil)
-
 	ctx := context.Background()
 	config, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(clientcmd.NewDefaultClientConfigLoadingRules(), &clientcmd.ConfigOverrides{}).ClientConfig()
 	if err != nil {
