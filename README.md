@@ -1,5 +1,7 @@
 ## Experimenting with `k8s.io/client-go` and Go generics
 
+[![Build](https://github.com/imjasonh/client-go2/actions/workflows/build.yaml/badge.svg)](https://github.com/imjasonh/client-go2/actions/workflows/build.yaml)
+
 This is an experimental type-parameter-aware client that wraps [`k8s.io/client-go/dynamic`](https://pkg.go.dev/k8s.io/client-go/dynamic) _(...for now)_.
 
 Until Go 1.18 is released, use [`gotip`](https://pkg.go.dev/golang.org/dl/gotip), or the recently released [Go 1.18 beta](https://go.dev/blog/go1.18beta1).
