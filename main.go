@@ -8,6 +8,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
 )
 
@@ -45,7 +46,20 @@ func main() {
 	cmc.Start(ctx)
 
 	// Start an informer to log all adds/updates/deletes for ConfigMaps.
-	cmc.Inform(ctx)
+	cmc.Inform(ctx, cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) {
+			key, _ := cache.MetaNamespaceKeyFunc(obj)
+			log.Println("--> ADD", key)
+		},
+		UpdateFunc: func(_, obj interface{}) {
+			key, _ := cache.MetaNamespaceKeyFunc(obj)
+			log.Println("--> UPDATE", key)
+		},
+		DeleteFunc: func(obj interface{}) {
+			key, _ := cache.MetaNamespaceKeyFunc(obj)
+			log.Println("--> DELETE", key)
+		},
+	})
 
 	// Create a ConfigMap, then list ConfigMaps.
 	if err := cmc.Create(ctx, "kube-system", &corev1.ConfigMap{

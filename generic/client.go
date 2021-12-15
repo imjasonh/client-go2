@@ -92,22 +92,9 @@ func (c client[T]) Create(ctx context.Context, namespace string, t T) error {
 	return err
 }
 
-func (c client[T]) Inform(ctx context.Context) {
+func (c client[T]) Inform(ctx context.Context, handler cache.ResourceEventHandler) {
 	inf := c.dsif.ForResource(c.gvr).Informer()
-	inf.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) {
-			key, _ := cache.MetaNamespaceKeyFunc(obj)
-			log.Println("--> ADD", key)
-	},
-		UpdateFunc: func(_, obj interface{}) { 
-			key, _ := cache.MetaNamespaceKeyFunc(obj)
-			log.Println("--> UPDATE", key)
-	},
-		DeleteFunc: func(obj interface{}) { 
-			key, _ := cache.MetaNamespaceKeyFunc(obj)
-			log.Println("--> DELETE", key)
-		},
-	})
+	inf.AddEventHandler(handler)
 	go inf.Run(ctx.Done())
 	if !cache.WaitForNamedCacheSync(c.gvr.String(), ctx.Done(), inf.HasSynced) {
 		log.Println("Failed to wait for caches to sync:"< c.gvr.String())
