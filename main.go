@@ -36,13 +36,18 @@ func main() {
 	if err != nil {
 		log.Fatal("listing pods:", err)
 	}
-	log.Println("PODS")
+	log.Println("LISTING PODS")
 	for _, p := range pods {
 		log.Println("-", p.Name)
 	}
 
-	// Create a ConfigMap, then list ConfigMaps.
 	cmc := generic.NewClient[*corev1.ConfigMap](cmGVR, config)
+	cmc.Start(ctx)
+
+	// Start an informer to log all adds/updates/deletes for ConfigMaps.
+	cmc.Inform(ctx)
+
+	// Create a ConfigMap, then list ConfigMaps.
 	if err := cmc.Create(ctx, "kube-system", &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: "foo-",
@@ -57,7 +62,7 @@ func main() {
 	if err != nil {
 		log.Fatal("listing configmaps:", err)
 	}
-	log.Println("CONFIGMAPS")
+	log.Println("LISTING CONFIGMAPS")
 	for _, cm := range cms {
 		log.Println("-", cm.Name)
 	}

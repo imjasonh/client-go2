@@ -1,17 +1,23 @@
 package generic
 
 import (
+	"log"
 	"bytes"
 	"context"
 	"encoding/json"
+	"time"
 
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/dynamic/dynamicinformer"
 	"k8s.io/client-go/rest"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
+
+const resyncPeriod = time.Hour
 
 // Ideally, this wouldn't need to take a GVR, and it could just be inferred
 // from the runtime.Object type given.
@@ -27,15 +33,25 @@ import (
 // In the meantime, taking a GVR removes ambiguity at the cost of verbosity.
 // /shrug
 func NewClient[T runtime.Object](gvr schema.GroupVersionResource, config *rest.Config) client[T] {
+	dyn:= dynamic.NewForConfigOrDie(config)
 	return client[T] {
 		gvr: gvr,
-		dyn: dynamic.NewForConfigOrDie(config),
+		dyn: dyn,
+		dsif: dynamicinformer.NewDynamicSharedInformerFactory(dyn, resyncPeriod),
 	}
 }
 
 type client[T runtime.Object] struct {
 	gvr schema.GroupVersionResource
-	dyn dynamic.Interface // TODO: don't depend on dynamic client
+
+	// TODO: don't depend on dynamic client
+	dyn dynamic.Interface 
+	dsif dynamicinformer.DynamicSharedInformerFactory
+}
+
+func (c client[T]) Start(ctx context.Context) {
+	go c.dsif.Start(ctx.Done())
+	c.dsif.WaitForCacheSync(ctx.Done())
 }
 
 func (c client[T]) List(ctx context.Context, namespace string) ([]T, error) {
@@ -76,3 +92,25 @@ func (c client[T]) Create(ctx context.Context, namespace string, t T) error {
 	return err
 }
 
+func (c client[T]) Inform(ctx context.Context) {
+	inf := c.dsif.ForResource(c.gvr).Informer()
+	inf.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) {
+			key, _ := cache.MetaNamespaceKeyFunc(obj)
+			log.Println("--> ADD", key)
+	},
+		UpdateFunc: func(_, obj interface{}) { 
+			key, _ := cache.MetaNamespaceKeyFunc(obj)
+			log.Println("--> UPDATE", key)
+	},
+		DeleteFunc: func(obj interface{}) { 
+			key, _ := cache.MetaNamespaceKeyFunc(obj)
+			log.Println("--> DELETE", key)
+		},
+	})
+	go inf.Run(ctx.Done())
+	if !cache.WaitForNamedCacheSync(c.gvr.String(), ctx.Done(), inf.HasSynced) {
+		log.Println("Failed to wait for caches to sync:"< c.gvr.String())
+		return
+	}
+}
