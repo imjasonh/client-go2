@@ -1,4 +1,4 @@
-# Experimenting with `go-client` and Go generics
+## Experimenting with `k8s.io/client-go` and Go generics
 
 This is an experimental type-parameter-aware client that wraps [`k8s.io/client-go/dynamic`](https://pkg.go.dev/k8s.io/client-go/dynamic) _(...for now)_.
 
