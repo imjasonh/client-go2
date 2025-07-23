@@ -4,12 +4,10 @@
 
 This is an experimental type-parameter-aware client that wraps [`k8s.io/client-go/dynamic`](https://pkg.go.dev/k8s.io/client-go/dynamic) _(...for now)_.
 
-Until Go 1.18 is released, use [`gotip`](https://pkg.go.dev/golang.org/dl/gotip), or the recently released [Go 1.18 beta](https://go.dev/blog/go1.18beta1).
-
 Assuming you've got a working kubeconfig (does `kubectl get pods` work?), you can run this code:
 
 ```
-$ go1.18beta1 run ./
+$ go run ./
 2021/12/15 12:08:11 LISTING PODS
 2021/12/15 12:08:11 - coredns-558bd4d5db-hjs27
 2021/12/15 12:08:11 - coredns-558bd4d5db-vhrtd

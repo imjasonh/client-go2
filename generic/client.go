@@ -1,20 +1,21 @@
 package generic
 
 import (
-	"log"
 	"bytes"
 	"context"
 	"encoding/json"
+	"log"
 	"time"
 
-	"k8s.io/client-go/tools/cache"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/dynamic/dynamicinformer"
 	"k8s.io/client-go/rest"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/tools/cache"
 )
 
 const resyncPeriod = time.Hour
@@ -33,10 +34,10 @@ const resyncPeriod = time.Hour
 // In the meantime, taking a GVR removes ambiguity at the cost of verbosity.
 // /shrug
 func NewClient[T runtime.Object](gvr schema.GroupVersionResource, config *rest.Config) client[T] {
-	dyn:= dynamic.NewForConfigOrDie(config)
-	return client[T] {
-		gvr: gvr,
-		dyn: dyn,
+	dyn := dynamic.NewForConfigOrDie(config)
+	return client[T]{
+		gvr:  gvr,
+		dyn:  dyn,
 		dsif: dynamicinformer.NewDynamicSharedInformerFactory(dyn, resyncPeriod),
 	}
 }
@@ -45,7 +46,7 @@ type client[T runtime.Object] struct {
 	gvr schema.GroupVersionResource
 
 	// TODO: don't depend on dynamic client
-	dyn dynamic.Interface 
+	dyn  dynamic.Interface
 	dsif dynamicinformer.DynamicSharedInformerFactory
 }
 
@@ -63,8 +64,12 @@ func (c client[T]) List(ctx context.Context, namespace string) ([]T, error) {
 	for _, u := range ul.Items {
 		var t T
 		var buf bytes.Buffer
-		if err := json.NewEncoder(&buf).Encode(u.Object); err != nil { return nil, err }
-		if err := json.NewDecoder(&buf).Decode(&t); err != nil { return nil, err }
+		if err := json.NewEncoder(&buf).Encode(u.Object); err != nil {
+			return nil, err
+		}
+		if err := json.NewDecoder(&buf).Decode(&t); err != nil {
+			return nil, err
+		}
 		out = append(out, t)
 	}
 	return out, nil
@@ -77,18 +82,49 @@ func (c client[T]) Get(ctx context.Context, namespace, name string) (T, error) {
 		return t, err
 	}
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(u.Object); err != nil { return t, err }
-	if err := json.NewDecoder(&buf).Decode(&t); err != nil { return t, err }
+	if err := json.NewEncoder(&buf).Encode(u.Object); err != nil {
+		return t, err
+	}
+	if err := json.NewDecoder(&buf).Decode(&t); err != nil {
+		return t, err
+	}
 	return t, nil
 }
 
 func (c client[T]) Create(ctx context.Context, namespace string, t T) error {
 	m := map[string]interface{}{}
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(t); err != nil { return err }
-	if err := json.NewDecoder(&buf).Decode(&m); err != nil { return err }
-	u := &unstructured.Unstructured{Object:m}
+	if err := json.NewEncoder(&buf).Encode(t); err != nil {
+		return err
+	}
+	if err := json.NewDecoder(&buf).Decode(&m); err != nil {
+		return err
+	}
+	u := &unstructured.Unstructured{Object: m}
 	_, err := c.dyn.Resource(c.gvr).Namespace(namespace).Create(ctx, u, metav1.CreateOptions{})
+	return err
+}
+
+func (c client[T]) Update(ctx context.Context, namespace string, t T) error {
+	m := map[string]interface{}{}
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(t); err != nil {
+		return err
+	}
+	if err := json.NewDecoder(&buf).Decode(&m); err != nil {
+		return err
+	}
+	u := &unstructured.Unstructured{Object: m}
+	_, err := c.dyn.Resource(c.gvr).Namespace(namespace).Update(ctx, u, metav1.UpdateOptions{})
+	return err
+}
+
+func (c client[T]) Delete(ctx context.Context, namespace, name string) error {
+	return c.dyn.Resource(c.gvr).Namespace(namespace).Delete(ctx, name, metav1.DeleteOptions{})
+}
+
+func (c client[T]) Patch(ctx context.Context, namespace, name string, pt types.PatchType, data []byte) error {
+	_, err := c.dyn.Resource(c.gvr).Namespace(namespace).Patch(ctx, name, pt, data, metav1.PatchOptions{})
 	return err
 }
 
@@ -97,7 +133,7 @@ func (c client[T]) Inform(ctx context.Context, handler cache.ResourceEventHandle
 	inf.AddEventHandler(handler)
 	go inf.Run(ctx.Done())
 	if !cache.WaitForNamedCacheSync(c.gvr.String(), ctx.Done(), inf.HasSynced) {
-		log.Println("Failed to wait for caches to sync:"< c.gvr.String())
+		log.Println("Failed to wait for caches to sync:", c.gvr.String())
 		return
 	}
 }
