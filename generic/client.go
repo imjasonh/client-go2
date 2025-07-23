@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
+	"reflect"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -12,34 +14,106 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/dynamic/dynamicinformer"
+	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/restmapper"
 	"k8s.io/client-go/tools/cache"
 )
 
 const resyncPeriod = time.Hour
 
-// Ideally, this wouldn't need to take a GVR, and it could just be inferred
-// from the runtime.Object type given.
+// NewClient creates a new generic client by automatically inferring
+// the GroupVersionResource from the type parameter T.
+// This uses the global Kubernetes scheme to look up the GVK for the type,
+// then uses discovery to map that to a GVR.
 //
-// In practice, this doesn't seem to be straightforward. :(
+// Note: T must be a pointer type (e.g., *corev1.Pod) as required by runtime.Object.
+// Non-pointer types will fail at compile time.
+func NewClient[T runtime.Object](config *rest.Config) (client[T], error) {
+	gvr, err := inferGVR[T](config)
+	if err != nil {
+		return client[T]{}, err
+	}
+	return NewClientGVR[T](gvr, config), nil
+}
+
+// NewClientGVR creates a new generic client with an explicit GroupVersionResource.
+// This is useful when you need to specify a custom GVR or when the type isn't
+// registered in the global scheme.
 //
-// Things that implement runtime.Object tend to be pointer types (e.g.,
-// *corev1.Pod), which means T is nil, and we can't call GetObjectKind() on it
-// to start to guess at the GVR.
-//
-// It might be possible to use schemes to lookup the GVR for a given Go type
-// (assuming it's been registered), which could let us get rid of this.
-// In the meantime, taking a GVR removes ambiguity at the cost of verbosity.
-// /shrug
-func NewClient[T runtime.Object](gvr schema.GroupVersionResource, config *rest.Config) client[T] {
+// Most users should prefer NewClient which automatically infers the GVR.
+func NewClientGVR[T runtime.Object](gvr schema.GroupVersionResource, config *rest.Config) client[T] {
 	dyn := dynamic.NewForConfigOrDie(config)
 	return client[T]{
 		gvr:  gvr,
 		dyn:  dyn,
 		dsif: dynamicinformer.NewDynamicSharedInformerFactory(dyn, resyncPeriod),
 	}
+}
+
+// inferGVR attempts to determine the GroupVersionResource for a given type T
+// by using the Kubernetes scheme and discovery client.
+func inferGVR[T runtime.Object](config *rest.Config) (schema.GroupVersionResource, error) {
+	// Create a zero-value instance of T to inspect
+	var zero T
+	typ := reflect.TypeOf(zero)
+
+	// Require pointer types - Kubernetes objects should always be pointers
+	if typ.Kind() != reflect.Ptr {
+		return schema.GroupVersionResource{}, fmt.Errorf("type %T must be a pointer type (e.g., *corev1.Pod, not corev1.Pod)", zero)
+	}
+
+	typ = typ.Elem()
+	// Create a new instance of the underlying type
+	instance := reflect.New(typ).Interface()
+
+	// Try to convert to runtime.Object
+	obj, ok := instance.(runtime.Object)
+	if !ok {
+		return schema.GroupVersionResource{}, fmt.Errorf("type %T does not implement runtime.Object", instance)
+	}
+
+	// Get the GVKs for this object from the scheme
+	gvks, _, err := scheme.Scheme.ObjectKinds(obj)
+	if err != nil {
+		return schema.GroupVersionResource{}, fmt.Errorf("failed to get GVK for type %T: %w", zero, err)
+	}
+
+	if len(gvks) == 0 {
+		return schema.GroupVersionResource{}, fmt.Errorf("no GVK registered for type %T", zero)
+	}
+
+	// If multiple match, return an error.
+	if len(gvks) > 1 {
+		return schema.GroupVersionResource{}, fmt.Errorf("multiple GVKs registered for type %T: %v", zero, gvks)
+	}
+	gvk := gvks[0]
+
+	// Create a discovery client to get the REST mapping
+	discoveryClient, err := discovery.NewDiscoveryClientForConfig(config)
+	if err != nil {
+		return schema.GroupVersionResource{}, fmt.Errorf("failed to create discovery client: %w", err)
+	}
+
+	// Get the API group resources
+	groupResources, err := restmapper.GetAPIGroupResources(discoveryClient)
+	if err != nil {
+		return schema.GroupVersionResource{}, fmt.Errorf("failed to get API group resources: %w", err)
+	}
+
+	// Create a REST mapper
+	mapper := restmapper.NewDiscoveryRESTMapper(groupResources)
+
+	// Get the resource mapping for the GVK
+	mapping, err := mapper.RESTMapping(gvk.GroupKind(), gvk.Version)
+	if err != nil {
+		return schema.GroupVersionResource{}, fmt.Errorf("failed to get REST mapping for %v: %w", gvk, err)
+	}
+
+	return mapping.Resource, nil
 }
 
 type client[T runtime.Object] struct {
