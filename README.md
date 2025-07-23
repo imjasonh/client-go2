@@ -2,15 +2,15 @@
 
 [![Build](https://github.com/imjasonh/client-go2/actions/workflows/build.yaml/badge.svg)](https://github.com/imjasonh/client-go2/actions/workflows/build.yaml)
 
-This is an experimental type-parameter-aware client that wraps [`k8s.io/client-go/dynamic`](https://pkg.go.dev/k8s.io/client-go/dynamic) _(...for now)_.
+This is an experimental type-parameter-aware client that wraps [`k8s.io/client-go/rest`](https://pkg.go.dev/k8s.io/client-go/rest).
 
 ## Features
 
 - **Type-safe generic client** - Work with strongly-typed Kubernetes objects instead of `unstructured.Unstructured`
-- **Automatic GVR inference** - No need to manually specify GroupVersionResource for standard Kubernetes types
+- **Zero code generation** - Uses Go generics instead of code generation
 - **Full CRUD operations** - List, Get, Create, Update, Delete, and Patch support
 - **Informer support** - Watch for changes with type-safe event handlers
-- **Zero code generation** - Uses Go generics instead of code generation
+- **Automatic GVR inference** - No need to manually specify GroupVersionResource for standard Kubernetes types
 
 ## Usage
 
