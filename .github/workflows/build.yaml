@@ -36,7 +36,7 @@ jobs:
     
     - uses: chainguard-dev/actions/setup-kind@main
       with:
-        k8s-version: v1.33.0
+        k8s-version: v1.33.x
     
     - run: |
         kubectl cluster-info
