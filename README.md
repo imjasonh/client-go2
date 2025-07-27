@@ -2,7 +2,7 @@
 
 [![Build](https://github.com/imjasonh/client-go2/actions/workflows/build.yaml/badge.svg)](https://github.com/imjasonh/client-go2/actions/workflows/build.yaml)
 
-This is an experimental type-parameter-aware client that wraps [`k8s.io/client-go/rest`](https://pkg.go.dev/k8s.io/client-go/rest).
+This is an experimental type-parameter-aware client that wraps [`k8s.io/client-go/rest`](https://pkg.go.dev/k8s.io/client-go/rest), in [about 500 lines of mostly-vibe-coded Go](./generic/client.go).
 
 ## Features
 
@@ -14,67 +14,24 @@ This is an experimental type-parameter-aware client that wraps [`k8s.io/client-g
 
 ## Usage
 
-```go
-// Create a client that automatically infers the GVR from the type
-podClient, err := generic.NewClient[*corev1.Pod](config)
-if err != nil {
-    log.Fatal(err)
-}
-
-// List pods in a namespace
-pods, err := podClient.List(ctx, "kube-system")
-if err != nil {
-    log.Fatal(err)
-}
-
-// Create a ConfigMap
-cmClient, err := generic.NewClient[*corev1.ConfigMap](config)
-if err != nil {
-    log.Fatal(err)
-}
-
-cm, err = cmClient.Create(ctx, "default", &corev1.ConfigMap{
-    ObjectMeta: metav1.ObjectMeta{
-        Name: "my-config",
-    },
-    Data: map[string]string{
-        "key": "value",
-    },
-})
-
-// If you need to specify a custom GVR, use NewClientGVR
-customClient := generic.NewClientGVR[*corev1.Pod](customGVR, config)
-```
-
-## Running the Example
-
-```
-$ go run ./
-2025/07/23 11:23:10 LISTING PODS
-2025/07/23 11:23:10 - coredns-674b8bbfcf-ddcww
-2025/07/23 11:23:10 - coredns-674b8bbfcf-dqqx5
-2025/07/23 11:23:10 - etcd-kind-control-plane
-2025/07/23 11:23:10 - kindnet-tkf6l
-2025/07/23 11:23:10 - kube-apiserver-kind-control-plane
-2025/07/23 11:23:10 - kube-controller-manager-kind-control-plane
-2025/07/23 11:23:10 - kube-proxy-76tcd
-2025/07/23 11:23:10 - kube-scheduler-kind-control-plane
-...
-```
+See [the example](./main.go)
 
 ## Testing
 
-Run unit tests:
-```bash
-go test ./generic
+Unit tests against a mock REST client:
+
+```
+make test
 ```
 
-Run e2e tests (requires a Kubernetes cluster):
-```bash
-go test ./generic -tags=e2e
+End-to-end tests against a real K8s cluster:
+
+```
+make e2e
 ```
 
-# THIS IS AN EXPERIMENT
+# ⚠️ THIS IS AN EXPERIMENT
 
-None of this is anywhere near set in stone.
+This is just for demo purposes.
+
 The name `client-go2` is a placeholder, and a joke.
