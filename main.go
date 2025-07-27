@@ -7,13 +7,14 @@ import (
 	"github.com/imjasonh/client-go2/generic"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
 )
 
 func main() {
 	ctx := context.Background()
-	config, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(clientcmd.NewDefaultClientConfigLoadingRules(), &clientcmd.ConfigOverrides{}).ClientConfig()
+	config, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
+		clientcmd.NewDefaultClientConfigLoadingRules(),
+		&clientcmd.ConfigOverrides{}).ClientConfig()
 	if err != nil {
 		log.Fatalf("ClientConfig: %v", err)
 	}
@@ -37,35 +38,51 @@ func main() {
 	if err != nil {
 		log.Fatal("creating configmap client:", err)
 	}
-	cmc.Start(ctx)
 
 	// Start an informer to log all adds/updates/deletes for ConfigMaps.
-	cmc.Inform(ctx, cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) {
-			key, _ := cache.MetaNamespaceKeyFunc(obj)
-			log.Println("--> ADD", key)
+	cmc.Inform(ctx, generic.InformerHandler[*corev1.ConfigMap]{
+		OnAdd: func(key string, obj *corev1.ConfigMap) {
+			log.Printf("ConfigMap added: %s/%s", obj.Namespace, obj.Name)
 		},
-		UpdateFunc: func(_, obj interface{}) {
-			key, _ := cache.MetaNamespaceKeyFunc(obj)
-			log.Println("--> UPDATE", key)
+		OnUpdate: func(key string, oldObj, newObj *corev1.ConfigMap) {
+			log.Printf("ConfigMap updated: %s/%s (old: %s, new: %s)", oldObj.Namespace, oldObj.Name, oldObj.Data, newObj.Data)
 		},
-		DeleteFunc: func(obj interface{}) {
-			key, _ := cache.MetaNamespaceKeyFunc(obj)
-			log.Println("--> DELETE", key)
+		OnDelete: func(key string, obj *corev1.ConfigMap) {
+			log.Printf("ConfigMap deleted: %s/%s", obj.Namespace, obj.Name)
+		},
+		OnError: func(obj any, err error) {
+			log.Printf("Error in ConfigMap informer: %v (object: %v, type: %T)", err, obj, obj)
 		},
 	})
 
-	// Create a ConfigMap, then list ConfigMaps.
-	if err := cmc.Create(ctx, "kube-system", &corev1.ConfigMap{
+	// Create a ConfigMap
+	cm, err := cmc.Create(ctx, "kube-system", &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: "foo-",
 		},
 		Data: map[string]string{
 			"hello": "world",
 		},
-	}); err != nil {
+	})
+	if err != nil {
 		log.Fatal("creating configmap:", err)
 	}
+
+	// Update the ConfigMap
+	cm.Data["hello"] = "universe" // Update the ConfigMap
+	log.Println("UPDATING CONFIGMAP", cm.Name)
+	_, err = cmc.Update(ctx, "kube-system", cm)
+	if err != nil {
+		log.Fatal("updating configmap:", err)
+	}
+
+	// Delete the ConfigMap
+	log.Println("DELETING CONFIGMAP", cm.Name)
+	if err := cmc.Delete(ctx, "kube-system", cm.Name); err != nil {
+		log.Fatal("deleting configmap:", err)
+	}
+
+	// List ConfigMaps
 	cms, err := cmc.List(ctx, "kube-system")
 	if err != nil {
 		log.Fatal("listing configmaps:", err)

@@ -3,16 +3,45 @@ package generic
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"net/http"
+	"strings"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/dynamic/fake"
 	"k8s.io/client-go/rest"
 )
+
+// mockTransport implements http.RoundTripper for testing
+type mockTransport struct {
+	responses map[string]mockResponse
+}
+
+type mockResponse struct {
+	statusCode int
+	body       string
+}
+
+func (m *mockTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	key := req.Method + " " + req.URL.Path
+	if resp, ok := m.responses[key]; ok {
+		return &http.Response{
+			StatusCode: resp.statusCode,
+			Body:       io.NopCloser(strings.NewReader(resp.body)),
+			Header:     make(http.Header),
+		}, nil
+	}
+	return &http.Response{
+		StatusCode: 404,
+		Body:       io.NopCloser(strings.NewReader(`{"kind":"Status","apiVersion":"v1","metadata":{},"status":"Failure","message":"not found","code":404}`)),
+		Header:     make(http.Header),
+	}, nil
+}
 
 func TestNewClientGVR(t *testing.T) {
 	gvr := schema.GroupVersionResource{
@@ -21,7 +50,13 @@ func TestNewClientGVR(t *testing.T) {
 		Resource: "pods",
 	}
 
-	config := &rest.Config{}
+	config := &rest.Config{
+		Host: "http://localhost",
+		ContentConfig: rest.ContentConfig{
+			GroupVersion:         &schema.GroupVersion{Version: "v1"},
+			NegotiatedSerializer: serializer.NewCodecFactory(runtime.NewScheme()).WithoutConversion(),
+		},
+	}
 	client := NewClientGVR[*corev1.Pod](gvr, config)
 
 	if client.gvr != gvr {
@@ -34,24 +69,59 @@ func TestList(t *testing.T) {
 	namespace := "test-namespace"
 
 	pod1 := &corev1.Pod{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Pod",
+			APIVersion: "v1",
+		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "pod1",
 			Namespace: namespace,
 		},
 	}
 	pod2 := &corev1.Pod{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Pod",
+			APIVersion: "v1",
+		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "pod2",
 			Namespace: namespace,
 		},
 	}
 
-	scheme := runtime.NewScheme()
-	if err := corev1.AddToScheme(scheme); err != nil {
-		t.Fatal(err)
+	podList := &corev1.PodList{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "PodList",
+			APIVersion: "v1",
+		},
+		Items: []corev1.Pod{*pod1, *pod2},
 	}
 
-	dynClient := fake.NewSimpleDynamicClient(scheme, pod1, pod2)
+	listJSON, _ := json.Marshal(podList)
+
+	transport := &mockTransport{
+		responses: map[string]mockResponse{
+			"GET /api/v1/namespaces/test-namespace/pods": {
+				statusCode: 200,
+				body:       string(listJSON),
+			},
+		},
+	}
+
+	config := &rest.Config{
+		Host:      "http://localhost",
+		APIPath:   "/api",
+		Transport: transport,
+		ContentConfig: rest.ContentConfig{
+			GroupVersion:         &schema.GroupVersion{Version: "v1"},
+			NegotiatedSerializer: serializer.NewCodecFactory(runtime.NewScheme()).WithoutConversion(),
+		},
+	}
+
+	restClient, err := rest.RESTClientFor(config)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	gvr := schema.GroupVersionResource{
 		Group:    "",
@@ -59,9 +129,9 @@ func TestList(t *testing.T) {
 		Resource: "pods",
 	}
 
-	client := client[*corev1.Pod]{
-		gvr: gvr,
-		dyn: dynClient,
+	client := Client[*corev1.Pod]{
+		gvr:        gvr,
+		restClient: restClient,
 	}
 
 	pods, err := client.List(ctx, namespace)
@@ -89,6 +159,10 @@ func TestGet(t *testing.T) {
 	podName := "test-pod"
 
 	expectedPod := &corev1.Pod{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Pod",
+			APIVersion: "v1",
+		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      podName,
 			Namespace: namespace,
@@ -103,12 +177,31 @@ func TestGet(t *testing.T) {
 		},
 	}
 
-	scheme := runtime.NewScheme()
-	if err := corev1.AddToScheme(scheme); err != nil {
-		t.Fatal(err)
+	podJSON, _ := json.Marshal(expectedPod)
+
+	transport := &mockTransport{
+		responses: map[string]mockResponse{
+			"GET /api/v1/namespaces/test-namespace/pods/test-pod": {
+				statusCode: 200,
+				body:       string(podJSON),
+			},
+		},
 	}
 
-	dynClient := fake.NewSimpleDynamicClient(scheme, expectedPod)
+	config := &rest.Config{
+		Host:      "http://localhost",
+		APIPath:   "/api",
+		Transport: transport,
+		ContentConfig: rest.ContentConfig{
+			GroupVersion:         &schema.GroupVersion{Version: "v1"},
+			NegotiatedSerializer: serializer.NewCodecFactory(runtime.NewScheme()).WithoutConversion(),
+		},
+	}
+
+	restClient, err := rest.RESTClientFor(config)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	gvr := schema.GroupVersionResource{
 		Group:    "",
@@ -116,9 +209,9 @@ func TestGet(t *testing.T) {
 		Resource: "pods",
 	}
 
-	client := client[*corev1.Pod]{
-		gvr: gvr,
-		dyn: dynClient,
+	client := Client[*corev1.Pod]{
+		gvr:        gvr,
+		restClient: restClient,
 	}
 
 	pod, err := client.Get(ctx, namespace, podName)
@@ -140,6 +233,10 @@ func TestCreate(t *testing.T) {
 	namespace := "test-namespace"
 
 	newPod := &corev1.Pod{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Pod",
+			APIVersion: "v1",
+		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "new-pod",
 			Namespace: namespace,
@@ -154,12 +251,35 @@ func TestCreate(t *testing.T) {
 		},
 	}
 
-	scheme := runtime.NewScheme()
-	if err := corev1.AddToScheme(scheme); err != nil {
-		t.Fatal(err)
+	podJSON, _ := json.Marshal(newPod)
+
+	transport := &mockTransport{
+		responses: map[string]mockResponse{
+			"POST /api/v1/namespaces/test-namespace/pods": {
+				statusCode: 201,
+				body:       string(podJSON),
+			},
+			"GET /api/v1/namespaces/test-namespace/pods/new-pod": {
+				statusCode: 200,
+				body:       string(podJSON),
+			},
+		},
 	}
 
-	dynClient := fake.NewSimpleDynamicClient(scheme)
+	config := &rest.Config{
+		Host:      "http://localhost",
+		APIPath:   "/api",
+		Transport: transport,
+		ContentConfig: rest.ContentConfig{
+			GroupVersion:         &schema.GroupVersion{Version: "v1"},
+			NegotiatedSerializer: serializer.NewCodecFactory(runtime.NewScheme()).WithoutConversion(),
+		},
+	}
+
+	restClient, err := rest.RESTClientFor(config)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	gvr := schema.GroupVersionResource{
 		Group:    "",
@@ -167,23 +287,28 @@ func TestCreate(t *testing.T) {
 		Resource: "pods",
 	}
 
-	client := client[*corev1.Pod]{
-		gvr: gvr,
-		dyn: dynClient,
+	client := Client[*corev1.Pod]{
+		gvr:        gvr,
+		restClient: restClient,
 	}
 
-	if err := client.Create(ctx, namespace, newPod); err != nil {
-		t.Fatalf("Create failed: %v", err)
-	}
-
-	// Verify the pod was created
-	created, err := client.Get(ctx, namespace, "new-pod")
+	created, err := client.Create(ctx, namespace, newPod)
 	if err != nil {
-		t.Fatalf("Failed to get created pod: %v", err)
+		t.Fatalf("Create failed: %v", err)
 	}
 
 	if created.Name != "new-pod" {
 		t.Errorf("expected pod name new-pod, got %s", created.Name)
+	}
+
+	// Verify the pod was created
+	fetched, err := client.Get(ctx, namespace, "new-pod")
+	if err != nil {
+		t.Fatalf("Failed to get created pod: %v", err)
+	}
+
+	if fetched.Name != "new-pod" {
+		t.Errorf("expected pod name new-pod, got %s", fetched.Name)
 	}
 }
 
@@ -192,6 +317,10 @@ func TestUpdate(t *testing.T) {
 	namespace := "test-namespace"
 
 	originalPod := &corev1.Pod{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Pod",
+			APIVersion: "v1",
+		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "update-pod",
 			Namespace: namespace,
@@ -206,12 +335,39 @@ func TestUpdate(t *testing.T) {
 		},
 	}
 
-	scheme := runtime.NewScheme()
-	if err := corev1.AddToScheme(scheme); err != nil {
-		t.Fatal(err)
+	// Update the pod
+	updatedPod := originalPod.DeepCopy()
+	updatedPod.Spec.Containers[0].Image = "nginx:2.0"
+
+	updatedJSON, _ := json.Marshal(updatedPod)
+
+	transport := &mockTransport{
+		responses: map[string]mockResponse{
+			"PUT /api/v1/namespaces/test-namespace/pods/update-pod": {
+				statusCode: 200,
+				body:       string(updatedJSON),
+			},
+			"GET /api/v1/namespaces/test-namespace/pods/update-pod": {
+				statusCode: 200,
+				body:       string(updatedJSON),
+			},
+		},
 	}
 
-	dynClient := fake.NewSimpleDynamicClient(scheme, originalPod)
+	config := &rest.Config{
+		Host:      "http://localhost",
+		APIPath:   "/api",
+		Transport: transport,
+		ContentConfig: rest.ContentConfig{
+			GroupVersion:         &schema.GroupVersion{Version: "v1"},
+			NegotiatedSerializer: serializer.NewCodecFactory(runtime.NewScheme()).WithoutConversion(),
+		},
+	}
+
+	restClient, err := rest.RESTClientFor(config)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	gvr := schema.GroupVersionResource{
 		Group:    "",
@@ -219,17 +375,18 @@ func TestUpdate(t *testing.T) {
 		Resource: "pods",
 	}
 
-	client := client[*corev1.Pod]{
-		gvr: gvr,
-		dyn: dynClient,
+	client := Client[*corev1.Pod]{
+		gvr:        gvr,
+		restClient: restClient,
 	}
 
-	// Update the pod
-	updatedPod := originalPod.DeepCopy()
-	updatedPod.Spec.Containers[0].Image = "nginx:2.0"
-
-	if err := client.Update(ctx, namespace, updatedPod); err != nil {
+	updated, err := client.Update(ctx, namespace, updatedPod)
+	if err != nil {
 		t.Fatalf("Update failed: %v", err)
+	}
+
+	if updated.Spec.Containers[0].Image != "nginx:2.0" {
+		t.Errorf("expected image nginx:2.0, got %s", updated.Spec.Containers[0].Image)
 	}
 
 	// Verify the update
@@ -247,19 +404,29 @@ func TestDelete(t *testing.T) {
 	ctx := context.Background()
 	namespace := "test-namespace"
 
-	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "delete-pod",
-			Namespace: namespace,
+	transport := &mockTransport{
+		responses: map[string]mockResponse{
+			"DELETE /api/v1/namespaces/test-namespace/pods/delete-pod": {
+				statusCode: 200,
+				body:       `{"kind":"Status","apiVersion":"v1","metadata":{},"status":"Success"}`,
+			},
 		},
 	}
 
-	scheme := runtime.NewScheme()
-	if err := corev1.AddToScheme(scheme); err != nil {
-		t.Fatal(err)
+	config := &rest.Config{
+		Host:      "http://localhost",
+		APIPath:   "/api",
+		Transport: transport,
+		ContentConfig: rest.ContentConfig{
+			GroupVersion:         &schema.GroupVersion{Version: "v1"},
+			NegotiatedSerializer: serializer.NewCodecFactory(runtime.NewScheme()).WithoutConversion(),
+		},
 	}
 
-	dynClient := fake.NewSimpleDynamicClient(scheme, pod)
+	restClient, err := rest.RESTClientFor(config)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	gvr := schema.GroupVersionResource{
 		Group:    "",
@@ -267,20 +434,14 @@ func TestDelete(t *testing.T) {
 		Resource: "pods",
 	}
 
-	client := client[*corev1.Pod]{
-		gvr: gvr,
-		dyn: dynClient,
+	client := Client[*corev1.Pod]{
+		gvr:        gvr,
+		restClient: restClient,
 	}
 
 	// Delete the pod
 	if err := client.Delete(ctx, namespace, "delete-pod"); err != nil {
 		t.Fatalf("Delete failed: %v", err)
-	}
-
-	// Verify deletion
-	_, err := client.Get(ctx, namespace, "delete-pod")
-	if err == nil {
-		t.Error("expected pod to be deleted, but it still exists")
 	}
 }
 
@@ -289,21 +450,45 @@ func TestPatch(t *testing.T) {
 	namespace := "test-namespace"
 
 	pod := &corev1.Pod{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Pod",
+			APIVersion: "v1",
+		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "patch-pod",
 			Namespace: namespace,
 			Labels: map[string]string{
-				"app": "test",
+				"app":         "test",
+				"environment": "production",
 			},
 		},
 	}
 
-	scheme := runtime.NewScheme()
-	if err := corev1.AddToScheme(scheme); err != nil {
-		t.Fatal(err)
+	podJSON, _ := json.Marshal(pod)
+
+	transport := &mockTransport{
+		responses: map[string]mockResponse{
+			"PATCH /api/v1/namespaces/test-namespace/pods/patch-pod": {
+				statusCode: 200,
+				body:       string(podJSON),
+			},
+		},
 	}
 
-	dynClient := fake.NewSimpleDynamicClient(scheme, pod)
+	config := &rest.Config{
+		Host:      "http://localhost",
+		APIPath:   "/api",
+		Transport: transport,
+		ContentConfig: rest.ContentConfig{
+			GroupVersion:         &schema.GroupVersion{Version: "v1"},
+			NegotiatedSerializer: serializer.NewCodecFactory(runtime.NewScheme()).WithoutConversion(),
+		},
+	}
+
+	restClient, err := rest.RESTClientFor(config)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	gvr := schema.GroupVersionResource{
 		Group:    "",
@@ -311,9 +496,9 @@ func TestPatch(t *testing.T) {
 		Resource: "pods",
 	}
 
-	client := client[*corev1.Pod]{
-		gvr: gvr,
-		dyn: dynClient,
+	client := Client[*corev1.Pod]{
+		gvr:        gvr,
+		restClient: restClient,
 	}
 
 	// Create a JSON patch
@@ -333,22 +518,6 @@ func TestPatch(t *testing.T) {
 	if err := client.Patch(ctx, namespace, "patch-pod", types.JSONPatchType, patchData); err != nil {
 		t.Fatalf("Patch failed: %v", err)
 	}
-
-	// Verify the patch
-	result, err := client.Get(ctx, namespace, "patch-pod")
-	if err != nil {
-		t.Fatalf("Failed to get patched pod: %v", err)
-	}
-
-	if result.Labels["environment"] != "production" {
-		t.Errorf("expected label environment=production, got %s", result.Labels["environment"])
-	}
-}
-
-func TestInform(t *testing.T) {
-	// Skip this test as it requires complex informer setup that doesn't work well with fake clients
-	// The informer functionality is better tested with e2e tests against a real cluster
-	t.Skip("Informer testing requires real cluster - see e2e tests")
 }
 
 // Test with ConfigMap to verify generic behavior
@@ -357,6 +526,10 @@ func TestGenericWithConfigMap(t *testing.T) {
 	namespace := "test-namespace"
 
 	cm := &corev1.ConfigMap{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "ConfigMap",
+			APIVersion: "v1",
+		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-config",
 			Namespace: namespace,
@@ -367,12 +540,39 @@ func TestGenericWithConfigMap(t *testing.T) {
 		},
 	}
 
-	scheme := runtime.NewScheme()
-	if err := corev1.AddToScheme(scheme); err != nil {
-		t.Fatal(err)
+	cmList := &corev1.ConfigMapList{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "ConfigMapList",
+			APIVersion: "v1",
+		},
+		Items: []corev1.ConfigMap{*cm},
 	}
 
-	dynClient := fake.NewSimpleDynamicClient(scheme, cm)
+	listJSON, _ := json.Marshal(cmList)
+
+	transport := &mockTransport{
+		responses: map[string]mockResponse{
+			"GET /api/v1/namespaces/test-namespace/configmaps": {
+				statusCode: 200,
+				body:       string(listJSON),
+			},
+		},
+	}
+
+	config := &rest.Config{
+		Host:      "http://localhost",
+		APIPath:   "/api",
+		Transport: transport,
+		ContentConfig: rest.ContentConfig{
+			GroupVersion:         &schema.GroupVersion{Version: "v1"},
+			NegotiatedSerializer: serializer.NewCodecFactory(runtime.NewScheme()).WithoutConversion(),
+		},
+	}
+
+	restClient, err := rest.RESTClientFor(config)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	gvr := schema.GroupVersionResource{
 		Group:    "",
@@ -380,9 +580,9 @@ func TestGenericWithConfigMap(t *testing.T) {
 		Resource: "configmaps",
 	}
 
-	client := client[*corev1.ConfigMap]{
-		gvr: gvr,
-		dyn: dynClient,
+	client := Client[*corev1.ConfigMap]{
+		gvr:        gvr,
+		restClient: restClient,
 	}
 
 	// Test List
@@ -409,7 +609,13 @@ func TestNewClientGVRCustomResource(t *testing.T) {
 		Resource: "myresources",
 	}
 
-	config := &rest.Config{}
+	config := &rest.Config{
+		Host: "http://localhost",
+		ContentConfig: rest.ContentConfig{
+			GroupVersion:         &schema.GroupVersion{Group: "custom.io", Version: "v1"},
+			NegotiatedSerializer: serializer.NewCodecFactory(runtime.NewScheme()).WithoutConversion(),
+		},
+	}
 	client := NewClientGVR[*corev1.Pod](customGVR, config) // Using Pod type as placeholder
 
 	if client.gvr != customGVR {

@@ -199,43 +199,30 @@ func TestInformE2E(t *testing.T) {
 		t.Fatalf("failed to create configmap client: %v", err)
 	}
 
-	// Start the informer
-	client.Start(ctx)
-
 	// Track events
 	events := make(chan string, 100)
 
-	handler := cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) {
-			// The dynamic informer returns unstructured objects
-			meta, err := cache.MetaNamespaceKeyFunc(obj)
-			if err != nil {
-				return
-			}
-			namespace, name, _ := cache.SplitMetaNamespaceKey(meta)
+	handler := InformerHandler[*corev1.ConfigMap]{
+		OnAdd: func(key string, obj *corev1.ConfigMap) {
+			namespace, name, _ := cache.SplitMetaNamespaceKey(key)
 			if namespace == "default" {
 				events <- "add:" + name
 			}
 		},
-		UpdateFunc: func(oldObj, newObj interface{}) {
-			meta, err := cache.MetaNamespaceKeyFunc(newObj)
-			if err != nil {
-				return
-			}
-			namespace, name, _ := cache.SplitMetaNamespaceKey(meta)
+		OnUpdate: func(key string, oldObj, newObj *corev1.ConfigMap) {
+			namespace, name, _ := cache.SplitMetaNamespaceKey(key)
 			if namespace == "default" {
 				events <- "update:" + name
 			}
 		},
-		DeleteFunc: func(obj interface{}) {
-			meta, err := cache.MetaNamespaceKeyFunc(obj)
-			if err != nil {
-				return
-			}
-			namespace, name, _ := cache.SplitMetaNamespaceKey(meta)
+		OnDelete: func(key string, obj *corev1.ConfigMap) {
+			namespace, name, _ := cache.SplitMetaNamespaceKey(key)
 			if namespace == "default" {
 				events <- "delete:" + name
 			}
+		},
+		OnError: func(obj any, err error) {
+			t.Logf("Informer error: %v for object %v", err, obj)
 		},
 	}
 
@@ -252,9 +239,11 @@ func TestInformE2E(t *testing.T) {
 		},
 	}
 
-	if err := client.Create(ctx, "default", testCM); err != nil {
+	created, err := client.Create(ctx, "default", testCM)
+	if err != nil {
 		t.Fatalf("failed to create test configmap: %v", err)
 	}
+	testCM = created
 	defer func() {
 		// Clean up
 		if err := client.Delete(ctx, "default", testCM.Name); err != nil {
@@ -279,9 +268,11 @@ func TestInformE2E(t *testing.T) {
 
 	// Update the ConfigMap
 	testCM.Data["test"] = "updated"
-	if err := client.Update(ctx, "default", testCM); err != nil {
+	updated, err := client.Update(ctx, "default", testCM)
+	if err != nil {
 		t.Fatalf("failed to update test configmap: %v", err)
 	}
+	testCM = updated
 
 	// Wait for update event
 	deadline = time.After(10 * time.Second)
