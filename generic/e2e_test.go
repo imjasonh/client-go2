@@ -121,7 +121,7 @@ func TestNewClientE2E(t *testing.T) {
 		}
 
 		// Try to list pods in default namespace
-		pods, err := client.List(ctx, "default")
+		pods, err := client.List(ctx, "default", nil)
 		if err != nil {
 			t.Fatalf("failed to list pods: %v", err)
 		}
@@ -136,7 +136,7 @@ func TestNewClientE2E(t *testing.T) {
 		}
 
 		// Try to list configmaps in default namespace
-		cms, err := client.List(ctx, "default")
+		cms, err := client.List(ctx, "default", nil)
 		if err != nil {
 			t.Fatalf("failed to list configmaps: %v", err)
 		}
@@ -151,7 +151,7 @@ func TestNewClientE2E(t *testing.T) {
 		}
 
 		// Try to list services in default namespace
-		svcs, err := client.List(ctx, "default")
+		svcs, err := client.List(ctx, "default", nil)
 		if err != nil {
 			t.Fatalf("failed to list services: %v", err)
 		}
@@ -226,7 +226,7 @@ func TestInformE2E(t *testing.T) {
 		},
 	}
 
-	client.Inform(ctx, handler)
+	client.Inform(ctx, handler, nil)
 
 	// Create a test ConfigMap
 	testCM := &corev1.ConfigMap{
@@ -239,14 +239,14 @@ func TestInformE2E(t *testing.T) {
 		},
 	}
 
-	created, err := client.Create(ctx, "default", testCM)
+	created, err := client.Create(ctx, "default", testCM, nil)
 	if err != nil {
 		t.Fatalf("failed to create test configmap: %v", err)
 	}
 	testCM = created
 	defer func() {
 		// Clean up
-		if err := client.Delete(ctx, "default", testCM.Name); err != nil {
+		if err := client.Delete(ctx, "default", testCM.Name, nil); err != nil {
 			t.Logf("failed to delete test configmap: %v", err)
 		}
 	}()
@@ -268,7 +268,7 @@ func TestInformE2E(t *testing.T) {
 
 	// Update the ConfigMap
 	testCM.Data["test"] = "updated"
-	updated, err := client.Update(ctx, "default", testCM)
+	updated, err := client.Update(ctx, "default", testCM, nil)
 	if err != nil {
 		t.Fatalf("failed to update test configmap: %v", err)
 	}

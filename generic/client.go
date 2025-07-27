@@ -144,12 +144,15 @@ type Client[T runtime.Object] struct {
 }
 
 // List retrieves a list of objects of type T from the specified namespace.
-func (c Client[T]) List(ctx context.Context, namespace string) ([]T, error) {
+func (c Client[T]) List(ctx context.Context, namespace string, opts *metav1.ListOptions) ([]T, error) {
+	if opts == nil {
+		opts = &metav1.ListOptions{}
+	}
 	// Get raw response body
 	body, err := c.restClient.Get().
 		NamespaceIfScoped(namespace, namespace != "").
 		Resource(c.gvr.Resource).
-		VersionedParams(&metav1.ListOptions{}, scheme.ParameterCodec).
+		VersionedParams(opts, scheme.ParameterCodec).
 		Do(ctx).
 		Raw()
 	if err != nil {
@@ -176,13 +179,16 @@ func (c Client[T]) List(ctx context.Context, namespace string) ([]T, error) {
 }
 
 // Get retrieves a single object of type T by name from the specified namespace.
-func (c Client[T]) Get(ctx context.Context, namespace, name string) (T, error) {
+func (c Client[T]) Get(ctx context.Context, namespace, name string, opts *metav1.GetOptions) (T, error) {
+	if opts == nil {
+		opts = &metav1.GetOptions{}
+	}
 	// Use Raw to get the bytes and unmarshal manually
 	body, err := c.restClient.Get().
 		NamespaceIfScoped(namespace, namespace != "").
 		Resource(c.gvr.Resource).
 		Name(name).
-		VersionedParams(&metav1.GetOptions{}, scheme.ParameterCodec).
+		VersionedParams(opts, scheme.ParameterCodec).
 		Do(ctx).
 		Raw()
 	if err != nil {
@@ -199,11 +205,14 @@ func (c Client[T]) Get(ctx context.Context, namespace, name string) (T, error) {
 }
 
 // Create creates a new object of type T in the specified namespace.
-func (c Client[T]) Create(ctx context.Context, namespace string, t T) (T, error) {
+func (c Client[T]) Create(ctx context.Context, namespace string, t T, opts *metav1.CreateOptions) (T, error) {
+	if opts == nil {
+		opts = &metav1.CreateOptions{}
+	}
 	body, err := c.restClient.Post().
 		NamespaceIfScoped(namespace, namespace != "").
 		Resource(c.gvr.Resource).
-		VersionedParams(&metav1.CreateOptions{}, scheme.ParameterCodec).
+		VersionedParams(opts, scheme.ParameterCodec).
 		Body(t).
 		Do(ctx).
 		Raw()
@@ -221,7 +230,10 @@ func (c Client[T]) Create(ctx context.Context, namespace string, t T) (T, error)
 }
 
 // Update updates an existing object of type T in the specified namespace.
-func (c Client[T]) Update(ctx context.Context, namespace string, t T) (T, error) {
+func (c Client[T]) Update(ctx context.Context, namespace string, t T, opts *metav1.UpdateOptions) (T, error) {
+	if opts == nil {
+		opts = &metav1.UpdateOptions{}
+	}
 	// Extract the name from the object metadata
 	data, err := json.Marshal(t)
 	if err != nil {
@@ -245,7 +257,7 @@ func (c Client[T]) Update(ctx context.Context, namespace string, t T) (T, error)
 		NamespaceIfScoped(namespace, namespace != "").
 		Resource(c.gvr.Resource).
 		Name(meta.Name).
-		VersionedParams(&metav1.UpdateOptions{}, scheme.ParameterCodec).
+		VersionedParams(opts, scheme.ParameterCodec).
 		Body(t).
 		Do(ctx).
 		Raw()
@@ -263,23 +275,29 @@ func (c Client[T]) Update(ctx context.Context, namespace string, t T) (T, error)
 }
 
 // Delete deletes an object of type T by name from the specified namespace.
-func (c Client[T]) Delete(ctx context.Context, namespace, name string) error {
+func (c Client[T]) Delete(ctx context.Context, namespace, name string, opts *metav1.DeleteOptions) error {
+	if opts == nil {
+		opts = &metav1.DeleteOptions{}
+	}
 	return c.restClient.Delete().
 		NamespaceIfScoped(namespace, namespace != "").
 		Resource(c.gvr.Resource).
 		Name(name).
-		VersionedParams(&metav1.DeleteOptions{}, scheme.ParameterCodec).
+		VersionedParams(opts, scheme.ParameterCodec).
 		Do(ctx).
 		Error()
 }
 
 // Patch applies a patch to an object of type T in the specified namespace.
-func (c Client[T]) Patch(ctx context.Context, namespace, name string, pt types.PatchType, data []byte) error {
+func (c Client[T]) Patch(ctx context.Context, namespace, name string, pt types.PatchType, data []byte, opts *metav1.PatchOptions) error {
+	if opts == nil {
+		opts = &metav1.PatchOptions{}
+	}
 	_, err := c.restClient.Patch(pt).
 		NamespaceIfScoped(namespace, namespace != "").
 		Resource(c.gvr.Resource).
 		Name(name).
-		VersionedParams(&metav1.PatchOptions{}, scheme.ParameterCodec).
+		VersionedParams(opts, scheme.ParameterCodec).
 		Body(data).
 		Do(ctx).
 		Raw()
@@ -298,28 +316,60 @@ type InformerHandler[T runtime.Object] struct {
 	OnError func(obj any, err error)
 }
 
+// InformOptions contains options for configuring an informer
+type InformOptions struct {
+	// ListOptions allows setting label selectors, field selectors, etc.
+	ListOptions metav1.ListOptions
+	// ResyncPeriod overrides the default resync period if set
+	ResyncPeriod *time.Duration
+}
+
 // Inform starts an informer for the specified type T and calls the appropriate handler methods
-func (c Client[T]) Inform(ctx context.Context, handler InformerHandler[T]) {
-	// Create a ListWatch using rest.Client
+func (c Client[T]) Inform(ctx context.Context, handler InformerHandler[T], opts *InformOptions) {
+	// Create a ListWatch using rest.Client with label selector support
 	lw := &cache.ListWatch{
-		ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+		ListFunc: func(listOpts metav1.ListOptions) (runtime.Object, error) {
+			// Merge provided options with runtime options
+			if opts != nil {
+				if opts.ListOptions.LabelSelector != "" {
+					listOpts.LabelSelector = opts.ListOptions.LabelSelector
+				}
+				if opts.ListOptions.FieldSelector != "" {
+					listOpts.FieldSelector = opts.ListOptions.FieldSelector
+				}
+			}
 			return c.restClient.Get().
 				Resource(c.gvr.Resource).
-				VersionedParams(&options, scheme.ParameterCodec).
+				VersionedParams(&listOpts, scheme.ParameterCodec).
 				Do(ctx).
 				Get()
 		},
-		WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+		WatchFunc: func(watchOpts metav1.ListOptions) (watch.Interface, error) {
+			// Merge provided options with runtime options
+			if opts != nil {
+				if opts.ListOptions.LabelSelector != "" {
+					watchOpts.LabelSelector = opts.ListOptions.LabelSelector
+				}
+				if opts.ListOptions.FieldSelector != "" {
+					watchOpts.FieldSelector = opts.ListOptions.FieldSelector
+				}
+			}
 			return c.restClient.Get().
 				Resource(c.gvr.Resource).
-				VersionedParams(&options, scheme.ParameterCodec).
+				VersionedParams(&watchOpts, scheme.ParameterCodec).
 				Watch(ctx)
 		},
 	}
 
+	// Set default resync period
+	resync := resyncPeriod
+	if opts != nil && opts.ResyncPeriod != nil {
+		resync = *opts.ResyncPeriod
+	}
+
 	// Create a new informer
 	var zero T
-	informer := cache.NewSharedInformer(lw, zero, resyncPeriod)
+	informer := cache.NewSharedInformer(lw, zero, resync)
 
 	_, err := informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj any) {

@@ -33,7 +33,7 @@ if err != nil {
     log.Fatal(err)
 }
 
-err = cmClient.Create(ctx, "default", &corev1.ConfigMap{
+cm, err = cmClient.Create(ctx, "default", &corev1.ConfigMap{
     ObjectMeta: metav1.ObjectMeta{
         Name: "my-config",
     },

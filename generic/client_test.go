@@ -29,6 +29,9 @@ type mockResponse struct {
 
 func (m *mockTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	key := req.Method + " " + req.URL.Path
+	if req.URL.RawQuery != "" {
+		key += "?" + req.URL.RawQuery
+	}
 	if resp, ok := m.responses[key]; ok {
 		return &http.Response{
 			StatusCode: resp.statusCode,
@@ -134,7 +137,7 @@ func TestList(t *testing.T) {
 		restClient: restClient,
 	}
 
-	pods, err := client.List(ctx, namespace)
+	pods, err := client.List(ctx, namespace, nil)
 	if err != nil {
 		t.Fatalf("List failed: %v", err)
 	}
@@ -214,7 +217,7 @@ func TestGet(t *testing.T) {
 		restClient: restClient,
 	}
 
-	pod, err := client.Get(ctx, namespace, podName)
+	pod, err := client.Get(ctx, namespace, podName, nil)
 	if err != nil {
 		t.Fatalf("Get failed: %v", err)
 	}
@@ -292,7 +295,7 @@ func TestCreate(t *testing.T) {
 		restClient: restClient,
 	}
 
-	created, err := client.Create(ctx, namespace, newPod)
+	created, err := client.Create(ctx, namespace, newPod, nil)
 	if err != nil {
 		t.Fatalf("Create failed: %v", err)
 	}
@@ -302,7 +305,7 @@ func TestCreate(t *testing.T) {
 	}
 
 	// Verify the pod was created
-	fetched, err := client.Get(ctx, namespace, "new-pod")
+	fetched, err := client.Get(ctx, namespace, "new-pod", nil)
 	if err != nil {
 		t.Fatalf("Failed to get created pod: %v", err)
 	}
@@ -380,7 +383,7 @@ func TestUpdate(t *testing.T) {
 		restClient: restClient,
 	}
 
-	updated, err := client.Update(ctx, namespace, updatedPod)
+	updated, err := client.Update(ctx, namespace, updatedPod, nil)
 	if err != nil {
 		t.Fatalf("Update failed: %v", err)
 	}
@@ -390,7 +393,7 @@ func TestUpdate(t *testing.T) {
 	}
 
 	// Verify the update
-	result, err := client.Get(ctx, namespace, "update-pod")
+	result, err := client.Get(ctx, namespace, "update-pod", nil)
 	if err != nil {
 		t.Fatalf("Failed to get updated pod: %v", err)
 	}
@@ -440,7 +443,7 @@ func TestDelete(t *testing.T) {
 	}
 
 	// Delete the pod
-	if err := client.Delete(ctx, namespace, "delete-pod"); err != nil {
+	if err := client.Delete(ctx, namespace, "delete-pod", nil); err != nil {
 		t.Fatalf("Delete failed: %v", err)
 	}
 }
@@ -515,7 +518,7 @@ func TestPatch(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := client.Patch(ctx, namespace, "patch-pod", types.JSONPatchType, patchData); err != nil {
+	if err := client.Patch(ctx, namespace, "patch-pod", types.JSONPatchType, patchData, nil); err != nil {
 		t.Fatalf("Patch failed: %v", err)
 	}
 }
@@ -586,7 +589,7 @@ func TestGenericWithConfigMap(t *testing.T) {
 	}
 
 	// Test List
-	configs, err := client.List(ctx, namespace)
+	configs, err := client.List(ctx, namespace, nil)
 	if err != nil {
 		t.Fatalf("List ConfigMaps failed: %v", err)
 	}
@@ -620,5 +623,181 @@ func TestNewClientGVRCustomResource(t *testing.T) {
 
 	if client.gvr != customGVR {
 		t.Errorf("expected custom GVR %v, got %v", customGVR, client.gvr)
+	}
+}
+
+// TestListWithLabelSelector tests List with label selector
+func TestListWithLabelSelector(t *testing.T) {
+	ctx := context.Background()
+	namespace := "test-namespace"
+
+	pod1 := &corev1.Pod{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Pod",
+			APIVersion: "v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "pod1",
+			Namespace: namespace,
+			Labels: map[string]string{
+				"app": "test",
+			},
+		},
+	}
+	// pod2 is defined to show what doesn't match the selector
+	_ = &corev1.Pod{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Pod",
+			APIVersion: "v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "pod2",
+			Namespace: namespace,
+			Labels: map[string]string{
+				"app": "other",
+			},
+		},
+	}
+
+	podList := &corev1.PodList{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "PodList",
+			APIVersion: "v1",
+		},
+		Items: []corev1.Pod{*pod1}, // Only pod1 matches the selector
+	}
+
+	listJSON, _ := json.Marshal(podList)
+
+	transport := &mockTransport{
+		responses: map[string]mockResponse{
+			"GET /api/v1/namespaces/test-namespace/pods?labelSelector=app%3Dtest": {
+				statusCode: 200,
+				body:       string(listJSON),
+			},
+		},
+	}
+
+	config := &rest.Config{
+		Host:      "http://localhost",
+		APIPath:   "/api",
+		Transport: transport,
+		ContentConfig: rest.ContentConfig{
+			GroupVersion:         &schema.GroupVersion{Version: "v1"},
+			NegotiatedSerializer: serializer.NewCodecFactory(runtime.NewScheme()).WithoutConversion(),
+		},
+	}
+
+	restClient, err := rest.RESTClientFor(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	gvr := schema.GroupVersionResource{
+		Group:    "",
+		Version:  "v1",
+		Resource: "pods",
+	}
+
+	client := Client[*corev1.Pod]{
+		gvr:        gvr,
+		restClient: restClient,
+	}
+
+	// List with label selector
+	pods, err := client.List(ctx, namespace, &metav1.ListOptions{
+		LabelSelector: "app=test",
+	})
+	if err != nil {
+		t.Fatalf("List failed: %v", err)
+	}
+
+	if len(pods) != 1 {
+		t.Errorf("expected 1 pod, got %d", len(pods))
+	}
+
+	if pods[0].Name != "pod1" {
+		t.Errorf("expected pod1, got %s", pods[0].Name)
+	}
+}
+
+// TestListWithFieldSelector tests List with field selector
+func TestListWithFieldSelector(t *testing.T) {
+	ctx := context.Background()
+	namespace := "test-namespace"
+
+	pod1 := &corev1.Pod{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Pod",
+			APIVersion: "v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "running-pod",
+			Namespace: namespace,
+		},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodRunning,
+		},
+	}
+
+	podList := &corev1.PodList{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "PodList",
+			APIVersion: "v1",
+		},
+		Items: []corev1.Pod{*pod1},
+	}
+
+	listJSON, _ := json.Marshal(podList)
+
+	transport := &mockTransport{
+		responses: map[string]mockResponse{
+			"GET /api/v1/namespaces/test-namespace/pods?fieldSelector=status.phase%3DRunning": {
+				statusCode: 200,
+				body:       string(listJSON),
+			},
+		},
+	}
+
+	config := &rest.Config{
+		Host:      "http://localhost",
+		APIPath:   "/api",
+		Transport: transport,
+		ContentConfig: rest.ContentConfig{
+			GroupVersion:         &schema.GroupVersion{Version: "v1"},
+			NegotiatedSerializer: serializer.NewCodecFactory(runtime.NewScheme()).WithoutConversion(),
+		},
+	}
+
+	restClient, err := rest.RESTClientFor(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	gvr := schema.GroupVersionResource{
+		Group:    "",
+		Version:  "v1",
+		Resource: "pods",
+	}
+
+	client := Client[*corev1.Pod]{
+		gvr:        gvr,
+		restClient: restClient,
+	}
+
+	// List with field selector
+	pods, err := client.List(ctx, namespace, &metav1.ListOptions{
+		FieldSelector: "status.phase=Running",
+	})
+	if err != nil {
+		t.Fatalf("List failed: %v", err)
+	}
+
+	if len(pods) != 1 {
+		t.Errorf("expected 1 pod, got %d", len(pods))
+	}
+
+	if pods[0].Name != "running-pod" {
+		t.Errorf("expected running-pod, got %s", pods[0].Name)
 	}
 }

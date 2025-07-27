@@ -19,4 +19,4 @@ fmt:
 lint:
 	golangci-lint run --fix ./...
 
-all: tidy test vet fmt lint e2e example
+all: tidy vet fmt lint test e2e example
