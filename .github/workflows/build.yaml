@@ -12,38 +12,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    
     - uses: actions/setup-go@v5
       with:
         go-version: 'stable'
-
-    - run: go build ./...
-    - run: go vet ./...
-    
-    - run: |
-        if [ "$(gofmt -s -l . | wc -l)" -gt 0 ]; then
-          echo "Code is not formatted. Run 'gofmt -s -w .'"
-          gofmt -s -d .
-          exit 1
-        fi
-    
-    - run: |
-        go mod tidy
-        git diff --exit-code go.mod go.sum
-    
-    - name: Run unit tests
-      run: go test ./... -v -race
-    
     - uses: chainguard-dev/actions/setup-kind@main
       with:
         k8s-version: v1.33.x
-    
-    - run: |
-        kubectl cluster-info
-        kubectl get nodes
-    
-    - name: Run e2e tests
-      run: go test ./... -v -tags=e2e
-    
-    - name: Run example
-      run: go run ./main.go
+
+    - run: make all
