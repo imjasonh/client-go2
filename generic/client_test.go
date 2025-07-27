@@ -505,19 +505,7 @@ func TestPatch(t *testing.T) {
 	}
 
 	// Create a JSON patch
-	patch := []map[string]interface{}{
-		{
-			"op":    "add",
-			"path":  "/metadata/labels/environment",
-			"value": "production",
-		},
-	}
-
-	patchData, err := json.Marshal(patch)
-	if err != nil {
-		t.Fatal(err)
-	}
-
+	patchData := []byte(`{"op": "add", "path": "/metadata/labels/environment", "value": "production"}`)
 	if err := client.Patch(ctx, namespace, "patch-pod", types.JSONPatchType, patchData, nil); err != nil {
 		t.Fatalf("Patch failed: %v", err)
 	}
