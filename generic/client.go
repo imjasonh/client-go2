@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"reflect"
 	"time"
+	"unicode"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -142,6 +143,28 @@ func inferGVR[T runtime.Object](config *rest.Config) (schema.GroupVersionResourc
 type Client[T runtime.Object] struct {
 	gvr        schema.GroupVersionResource
 	restClient *rest.RESTClient
+}
+
+// GVK returns the GroupVersionKind for this client.
+// Note: This is an approximation since we only have GVR. The Kind is derived
+// from the resource name by capitalizing and singularizing it.
+func (c Client[T]) GVK() schema.GroupVersionKind {
+	// Simple singularization - just remove trailing 's'
+	// This won't work for all cases but covers most common ones
+	kind := c.gvr.Resource
+	if len(kind) > 1 && kind[len(kind)-1] == 's' {
+		kind = kind[:len(kind)-1]
+	}
+	// Capitalize first letter
+	if len(kind) > 0 {
+		kind = string(unicode.ToUpper(rune(kind[0]))) + kind[1:]
+	}
+
+	return schema.GroupVersionKind{
+		Group:   c.gvr.Group,
+		Version: c.gvr.Version,
+		Kind:    kind,
+	}
 }
 
 // PodClient returns a PodClient with expansion methods.
@@ -430,7 +453,9 @@ type InformOptions struct {
 }
 
 // Inform starts an informer for the specified type T and calls the appropriate handler methods
-func (c Client[T]) Inform(ctx context.Context, handler InformerHandler[T], opts *InformOptions) {
+//
+// It returns a Lister[T] that can be used to list objects in the cache.
+func (c Client[T]) Inform(ctx context.Context, handler InformerHandler[T], opts *InformOptions) (*Lister[T], error) {
 	// Create a ListWatch using rest.Client with label selector support
 	lw := &cache.ListWatch{
 		ListFunc: func(listOpts metav1.ListOptions) (runtime.Object, error) {
@@ -474,7 +499,9 @@ func (c Client[T]) Inform(ctx context.Context, handler InformerHandler[T], opts 
 
 	// Create a new informer
 	var zero T
-	informer := cache.NewSharedInformer(lw, zero, resync)
+	informer := cache.NewSharedIndexInformer(lw, zero, resync, cache.Indexers{
+		cache.NamespaceIndex: cache.MetaNamespaceIndexFunc,
+	})
 
 	_, err := informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj any) {
@@ -532,15 +559,14 @@ func (c Client[T]) Inform(ctx context.Context, handler InformerHandler[T], opts 
 		},
 	})
 	if err != nil {
-		handler.handleErr(nil, fmt.Errorf("failed to add event handler: %w", err))
-		return
+		return nil, fmt.Errorf("failed to add event handler: %w", err)
 	}
 
 	go informer.Run(ctx.Done())
 	if !cache.WaitForNamedCacheSync(c.gvr.String(), ctx.Done(), informer.HasSynced) {
-		handler.handleErr(nil, fmt.Errorf("failed to sync informer for %s", c.gvr.String()))
-		return
+		return nil, fmt.Errorf("failed to sync informer for %s", c.gvr.String())
 	}
+	return NewLister[T](informer, c.gvr.GroupResource()), nil
 }
 
 // SubResource returns a request for a subresource of the given resource.

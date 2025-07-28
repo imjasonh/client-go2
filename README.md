@@ -14,6 +14,7 @@ This is an experimental type-parameter-aware client that wraps [`k8s.io/client-g
 - **Expansion methods** - Resource-specific operations like Pod.GetLogs() and Service.ProxyGet()
 - **Label/Field selectors** - Filter resources using Kubernetes selectors
 - **SubResource access** - Generic method to access any subresource
+- **[Generic Controller Framework](./controller/README.md)** - Build Kubernetes controllers with automatic update detection and conflict resolution
 
 ## Usage
 
@@ -117,6 +118,31 @@ pod.Status.Conditions = append(pod.Status.Conditions, corev1.PodCondition{
 
 updated, err := client.UpdateStatus(ctx, "default", pod, nil)
 ```
+
+### Controller Framework
+
+The [controller package](./controller/README.md) provides a simple framework for building Kubernetes controllers:
+
+```go
+// Create a reconciler
+reconciler := controller.ReconcilerFunc[*corev1.ConfigMap](
+    func(ctx context.Context, cm *corev1.ConfigMap) error {
+        // Modify the ConfigMap - changes are automatically detected and persisted
+        cm.Annotations["processed"] = "true"
+        cm.Labels["controller"] = "my-controller"
+        return nil
+    })
+
+// Create and run controller
+client, _ := generic.NewClient[*corev1.ConfigMap](config)
+ctrl := controller.New(client, reconciler, &controller.Options[*corev1.ConfigMap]{
+    Namespace:   "default",
+    Concurrency: 5,
+})
+ctrl.Run(ctx)
+```
+
+See the [controller documentation](./controller/README.md) and [example controller](./examples/controller/main.go) for more details.
 
 ## Testing
 
