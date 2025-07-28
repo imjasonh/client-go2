@@ -2,7 +2,7 @@
 
 [![Build](https://github.com/imjasonh/client-go2/actions/workflows/build.yaml/badge.svg)](https://github.com/imjasonh/client-go2/actions/workflows/build.yaml)
 
-This is an experimental type-parameter-aware client that wraps [`k8s.io/client-go/rest`](https://pkg.go.dev/k8s.io/client-go/rest), in [about 570 lines of mostly-vibe-coded Go](./generic/client.go).
+This is an experimental type-parameter-aware client that wraps [`k8s.io/client-go/rest`](https://pkg.go.dev/k8s.io/client-go/rest), in [surprisingly little code](./generic/client.go).
 
 ## Features
 
