@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -141,6 +142,34 @@ func inferGVR[T runtime.Object](config *rest.Config) (schema.GroupVersionResourc
 type Client[T runtime.Object] struct {
 	gvr        schema.GroupVersionResource
 	restClient *rest.RESTClient
+}
+
+// PodClient returns a PodClient with expansion methods.
+// This will panic if T is not *corev1.Pod.
+func (c Client[T]) PodClient(namespace string) PodClient {
+	// Type assert to ensure T is *corev1.Pod
+	var zero T
+	if _, ok := any(zero).(*corev1.Pod); !ok {
+		panic(fmt.Sprintf("PodClient() can only be called on Client[*corev1.Pod], not Client[%T]", zero))
+	}
+
+	// This is safe because we know T is *corev1.Pod
+	podClient := any(c).(Client[*corev1.Pod])
+	return PodClient{client: podClient, namespace: namespace}
+}
+
+// ServiceClient returns a ServiceClient with expansion methods.
+// This will panic if T is not *corev1.Service.
+func (c Client[T]) ServiceClient(namespace string) ServiceClient {
+	// Type assert to ensure T is *corev1.Service
+	var zero T
+	if _, ok := any(zero).(*corev1.Service); !ok {
+		panic(fmt.Sprintf("ServiceClient() can only be called on Client[*corev1.Service], not Client[%T]", zero))
+	}
+
+	// This is safe because we know T is *corev1.Service
+	serviceClient := any(c).(Client[*corev1.Service])
+	return ServiceClient{client: serviceClient, namespace: namespace}
 }
 
 // List retrieves a list of objects of type T from the specified namespace.
@@ -304,6 +333,82 @@ func (c Client[T]) Patch(ctx context.Context, namespace, name string, pt types.P
 	return err
 }
 
+// Watch returns a watch interface for watching changes to resources of type T.
+func (c Client[T]) Watch(ctx context.Context, namespace string, opts *metav1.ListOptions) (watch.Interface, error) {
+	if opts == nil {
+		opts = &metav1.ListOptions{}
+	}
+	opts.Watch = true
+	return c.restClient.Get().
+		NamespaceIfScoped(namespace, namespace != "").
+		Resource(c.gvr.Resource).
+		VersionedParams(opts, scheme.ParameterCodec).
+		Watch(ctx)
+}
+
+// DeleteCollection deletes a collection of objects of type T.
+func (c Client[T]) DeleteCollection(ctx context.Context, namespace string, opts *metav1.DeleteOptions, listOpts *metav1.ListOptions) error {
+	if opts == nil {
+		opts = &metav1.DeleteOptions{}
+	}
+	if listOpts == nil {
+		listOpts = &metav1.ListOptions{}
+	}
+	return c.restClient.Delete().
+		NamespaceIfScoped(namespace, namespace != "").
+		Resource(c.gvr.Resource).
+		VersionedParams(opts, scheme.ParameterCodec).
+		VersionedParams(listOpts, scheme.ParameterCodec).
+		Do(ctx).
+		Error()
+}
+
+// UpdateStatus updates the status subresource of an object of type T.
+func (c Client[T]) UpdateStatus(ctx context.Context, namespace string, t T, opts *metav1.UpdateOptions) (T, error) {
+	if opts == nil {
+		opts = &metav1.UpdateOptions{}
+	}
+	// Extract the name from the object metadata
+	data, err := json.Marshal(t)
+	if err != nil {
+		var zero T
+		return zero, err
+	}
+	var meta metav1.ObjectMeta
+	var objMap map[string]json.RawMessage
+	if err := json.Unmarshal(data, &objMap); err != nil {
+		var zero T
+		return zero, err
+	}
+	if metaData, ok := objMap["metadata"]; ok {
+		if err := json.Unmarshal(metaData, &meta); err != nil {
+			var zero T
+			return zero, err
+		}
+	}
+
+	body, err := c.restClient.Put().
+		NamespaceIfScoped(namespace, namespace != "").
+		Resource(c.gvr.Resource).
+		Name(meta.Name).
+		SubResource("status").
+		VersionedParams(opts, scheme.ParameterCodec).
+		Body(t).
+		Do(ctx).
+		Raw()
+	if err != nil {
+		var zero T
+		return zero, err
+	}
+
+	var result T
+	if err := json.Unmarshal(body, &result); err != nil {
+		var zero T
+		return zero, err
+	}
+	return result, nil
+}
+
 // InformerHandler defines the interface for handling events from an informer.
 type InformerHandler[T runtime.Object] struct {
 	// OnAdd is called when a new object is added to the informer.
@@ -436,6 +541,26 @@ func (c Client[T]) Inform(ctx context.Context, handler InformerHandler[T], opts 
 		handler.handleErr(nil, fmt.Errorf("failed to sync informer for %s", c.gvr.String()))
 		return
 	}
+}
+
+// SubResource returns a request for a subresource of the given resource.
+// This can be used to access subresources like logs, exec, attach, etc.
+// For example, to get pod logs:
+//
+//	req := client.SubResource("default", "my-pod", "log")
+//	req.VersionedParams(&v1.PodLogOptions{...}, scheme.ParameterCodec)
+func (c Client[T]) SubResource(namespace, name, subresource string) *rest.Request {
+	return c.restClient.Get().
+		NamespaceIfScoped(namespace, namespace != "").
+		Name(name).
+		Resource(c.gvr.Resource).
+		SubResource(subresource)
+}
+
+// RESTClient returns the underlying rest.RESTClient.
+// This is useful for advanced use cases where direct access to the REST client is needed.
+func (c Client[T]) RESTClient() *rest.RESTClient {
+	return c.restClient
 }
 
 func (h InformerHandler[T]) handleErr(obj any, err error) {
