@@ -24,7 +24,7 @@ func (r *ConfigMapReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMa
 	// Check if secretLister is available
 	if r.secretLister == nil {
 		log.Info("Secret lister not available yet")
-		return nil
+		return fmt.Errorf("secret lister not available")
 	}
 
 	// List secrets in the same namespace
