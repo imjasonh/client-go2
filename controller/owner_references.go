@@ -71,7 +71,10 @@ func getObjectMetaFromObject(obj runtime.Object) (metav1.Object, error) {
 
 // WatchOwned configures the controller to watch resources of type O and enqueue
 // their owners of type T when they change.
-func (c *Controller[T]) WatchOwned(ctx context.Context, ownedClient generic.Client[runtime.Object], ownerGVK schema.GroupVersionKind, isController bool) error {
+// It returns a Lister for the owned resources.
+func (c *Controller[T]) WatchOwned(ctx context.Context, ownedClient generic.Client[runtime.Object], isController bool) (*generic.Lister[runtime.Object], error) {
+	ownerGVK := c.client.GVK()
+
 	// Create handler for owned resources
 	handler := generic.InformerHandler[runtime.Object]{
 		OnAdd: func(key string, obj runtime.Object) {
@@ -97,9 +100,12 @@ func (c *Controller[T]) WatchOwned(ctx context.Context, ownedClient generic.Clie
 	}
 
 	// Start watching the owned resources
-	go ownedClient.Inform(ctx, handler, opts)
+	lister, err := ownedClient.Inform(ctx, handler, opts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to start informer for owned resources: %w", err)
+	}
 
-	return nil
+	return lister, nil
 }
 
 // enqueueOwners finds owners of the given object and enqueues them

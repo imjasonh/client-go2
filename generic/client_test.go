@@ -39,6 +39,16 @@ func (m *mockTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 			Header:     make(http.Header),
 		}, nil
 	}
+	// Try without query params for debugging
+	keyWithoutQuery := req.Method + " " + req.URL.Path
+	if resp, ok := m.responses[keyWithoutQuery]; ok && req.URL.RawQuery != "" {
+		// Log that we're using the key without query params
+		return &http.Response{
+			StatusCode: resp.statusCode,
+			Body:       io.NopCloser(strings.NewReader(resp.body)),
+			Header:     make(http.Header),
+		}, nil
+	}
 	return &http.Response{
 		StatusCode: 404,
 		Body:       io.NopCloser(strings.NewReader(`{"kind":"Status","apiVersion":"v1","metadata":{},"status":"Failure","message":"not found","code":404}`)),

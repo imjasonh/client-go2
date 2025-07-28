@@ -60,6 +60,7 @@ type Controller[T runtime.Object] struct {
 	concurrency  int
 	deepCopyFunc func(T) T
 	ownedTypes   []OwnedType
+	ownedListers map[schema.GroupVersionKind]*generic.Lister[runtime.Object]
 }
 
 // New creates a new Controller with the given client, reconciler, and options.
@@ -83,6 +84,7 @@ func New[T runtime.Object](client generic.Client[T], reconciler Reconciler[T], o
 		concurrency:  opts.Concurrency,
 		ownedTypes:   opts.OwnedTypes,
 		deepCopyFunc: opts.DeepCopyFunc,
+		ownedListers: make(map[schema.GroupVersionKind]*generic.Lister[runtime.Object]),
 	}
 }
 
@@ -117,14 +119,19 @@ func (c *Controller[T]) Run(ctx context.Context) error {
 	}
 
 	// Start informer in background
-	go c.client.Inform(ctx, handler, opts)
+	go func() {
+		if _, err := c.client.Inform(ctx, handler, opts); err != nil {
+			clog.ErrorContext(ctx, "failed to start informer", "error", err)
+		}
+	}()
 
 	// Start watching owned resources
 	for _, owned := range c.ownedTypes {
-		err := c.WatchOwned(ctx, owned.Client, owned.OwnerGVK, owned.IsController)
+		lister, err := c.WatchOwned(ctx, owned.Client, owned.IsController)
 		if err != nil {
 			return fmt.Errorf("failed to watch owned resources: %w", err)
 		}
+		c.ownedListers[owned.OwnerGVK] = lister
 	}
 
 	// Wait for cache sync
@@ -458,4 +465,10 @@ func (c *Controller[T]) copyStatus(from, to T) error {
 
 	statusField.Set(reflect.ValueOf(fromStatus))
 	return nil
+}
+
+// GetOwnedLister returns the lister for owned resources of the given GVK.
+// Returns nil if no lister exists for that GVK.
+func (c *Controller[T]) GetOwnedLister(gvk schema.GroupVersionKind) *generic.Lister[runtime.Object] {
+	return c.ownedListers[gvk]
 }

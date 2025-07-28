@@ -15,6 +15,12 @@ func (r *requeueAfter) Error() string {
 	return fmt.Sprintf("requeue after %v", r.duration)
 }
 
+// Is implements error matching for requeueAfter
+func (r *requeueAfter) Is(target error) bool {
+	_, ok := target.(*requeueAfter)
+	return ok
+}
+
 // RequeueAfter returns an error that indicates the reconciler should requeue
 // the item after the specified duration.
 func RequeueAfter(d time.Duration) error {
@@ -26,6 +32,12 @@ type requeueImmediately struct{}
 
 func (r *requeueImmediately) Error() string {
 	return "requeue immediately"
+}
+
+// Is implements error matching for requeueImmediately
+func (r *requeueImmediately) Is(target error) bool {
+	_, ok := target.(*requeueImmediately)
+	return ok
 }
 
 // RequeueImmediately returns an error that indicates the reconciler should
@@ -49,7 +61,8 @@ func (p *permanentError) Unwrap() error {
 
 // Is implements error matching for permanentError
 func (p *permanentError) Is(target error) bool {
-	return errors.Is(target, &permanentError{})
+	_, ok := target.(*permanentError)
+	return ok
 }
 
 // PermanentError wraps an error to indicate that it should not be retried.

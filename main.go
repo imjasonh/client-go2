@@ -8,6 +8,7 @@ import (
 	"github.com/imjasonh/client-go2/generic"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/tools/clientcmd"
 )
 
@@ -42,7 +43,7 @@ func main() {
 
 	// Example 1: Start an informer for ALL ConfigMaps (no selector)
 	log.Println("Starting informer for ALL ConfigMaps...")
-	cmc.Inform(ctx, generic.InformerHandler[*corev1.ConfigMap]{
+	if _, err := cmc.Inform(ctx, generic.InformerHandler[*corev1.ConfigMap]{
 		OnAdd: func(key string, obj *corev1.ConfigMap) {
 			log.Printf("[ALL] ConfigMap added: %s/%s", obj.Namespace, obj.Name)
 		},
@@ -53,13 +54,15 @@ func main() {
 			log.Printf("[ALL] ConfigMap deleted: %s/%s", obj.Namespace, obj.Name)
 		},
 		OnError: func(obj any, err error) {
-			log.Printf("[ALL] Error in ConfigMap informer: %v", err)
+			log.Fatalf("[ALL] Error in ConfigMap informer: %v", err)
 		},
-	}, nil)
+	}, nil); err != nil {
+		log.Fatal("Error starting ALL ConfigMap informer:", err)
+	}
 
 	// Example 2: Start an informer with label selector
 	log.Println("Starting informer for ConfigMaps with label test=example...")
-	cmc.Inform(ctx, generic.InformerHandler[*corev1.ConfigMap]{
+	if _, err := cmc.Inform(ctx, generic.InformerHandler[*corev1.ConfigMap]{
 		OnAdd: func(key string, obj *corev1.ConfigMap) {
 			log.Printf("[LABELED] ConfigMap added: %s/%s (labels: %v)", obj.Namespace, obj.Name, obj.Labels)
 		},
@@ -70,17 +73,19 @@ func main() {
 			log.Printf("[LABELED] ConfigMap deleted: %s/%s", obj.Namespace, obj.Name)
 		},
 		OnError: func(obj any, err error) {
-			log.Printf("[LABELED] Error: %v", err)
+			log.Fatalf("[LABELED] Error: %v", err)
 		},
 	}, &generic.InformOptions{
 		ListOptions: metav1.ListOptions{
 			LabelSelector: "test=example",
 		},
-	})
+	}); err != nil {
+		log.Fatalf("Error starting LABELED ConfigMap informer: %v", err)
+	}
 
 	// Example 3: Start a Pod informer with field selector for running pods only
 	log.Println("Starting informer for Running Pods only...")
-	podClient.Inform(ctx, generic.InformerHandler[*corev1.Pod]{
+	if _, err := podClient.Inform(ctx, generic.InformerHandler[*corev1.Pod]{
 		OnAdd: func(key string, obj *corev1.Pod) {
 			log.Printf("[RUNNING] Pod added: %s/%s (phase: %s)", obj.Namespace, obj.Name, obj.Status.Phase)
 		},
@@ -94,18 +99,20 @@ func main() {
 			log.Printf("[RUNNING] Pod deleted: %s/%s", obj.Namespace, obj.Name)
 		},
 		OnError: func(obj any, err error) {
-			log.Printf("[RUNNING] Error: %v", err)
+			log.Fatalf("[RUNNING] Error: %v", err)
 		},
 	}, &generic.InformOptions{
 		ListOptions: metav1.ListOptions{
 			FieldSelector: "status.phase=Running",
 		},
-	})
+	}); err != nil {
+		log.Fatalf("Error starting RUNNING Pod informer: %v", err)
+	}
 
 	// Example 4: Informer with custom resync period
 	resync := 30 * time.Second
 	log.Printf("Starting informer with custom resync period of %v...\n", resync)
-	cmc.Inform(ctx, generic.InformerHandler[*corev1.ConfigMap]{
+	if _, err := cmc.Inform(ctx, generic.InformerHandler[*corev1.ConfigMap]{
 		OnAdd: func(key string, obj *corev1.ConfigMap) {
 			log.Printf("[RESYNC] ConfigMap added: %s/%s", obj.Namespace, obj.Name)
 		},
@@ -116,14 +123,16 @@ func main() {
 			log.Printf("[RESYNC] ConfigMap deleted: %s/%s", obj.Namespace, obj.Name)
 		},
 		OnError: func(obj any, err error) {
-			log.Printf("[RESYNC] Error: %v", err)
+			log.Fatalf("[RESYNC] Error: %v", err)
 		},
 	}, &generic.InformOptions{
 		ListOptions: metav1.ListOptions{
 			LabelSelector: "special=resync-test",
 		},
 		ResyncPeriod: &resync,
-	})
+	}); err != nil {
+		log.Fatalf("Error starting RESYNC ConfigMap informer: %v", err)
+	}
 
 	// Wait a moment for informers to sync
 	time.Sleep(2 * time.Second)
@@ -141,7 +150,7 @@ func main() {
 		},
 	}, nil)
 	if err != nil {
-		log.Printf("Error creating cm1: %v", err)
+		log.Fatalf("Error creating cm1: %v", err)
 	} else {
 		log.Printf("Created ConfigMap without labels: %s", cm1.Name)
 	}
@@ -159,7 +168,7 @@ func main() {
 		},
 	}, nil)
 	if err != nil {
-		log.Printf("Error creating cm2: %v", err)
+		log.Fatalf("Error creating cm2: %v", err)
 	} else {
 		log.Printf("Created ConfigMap with test=example label: %s", cm2.Name)
 	}
@@ -177,7 +186,7 @@ func main() {
 		},
 	}, nil)
 	if err != nil {
-		log.Printf("Error creating cm3: %v", err)
+		log.Fatalf("Error creating cm3: %v", err)
 	} else {
 		log.Printf("Created ConfigMap with special=resync-test label: %s", cm3.Name)
 	}
@@ -190,7 +199,7 @@ func main() {
 		log.Printf("\nUPDATING CONFIGMAP %s", cm2.Name)
 		cm2.Data["hello"] = "updated"
 		if _, err := cmc.Update(ctx, "default", cm2, nil); err != nil {
-			log.Printf("Error updating cm2: %v", err)
+			log.Fatalf("Error updating cm2: %v", err)
 		}
 	}
 
@@ -201,17 +210,17 @@ func main() {
 	log.Println("\nCLEANING UP...")
 	if cm1 != nil {
 		if err := cmc.Delete(ctx, "default", cm1.Name, nil); err != nil {
-			log.Printf("Error deleting cm1: %v", err)
+			log.Fatalf("Error deleting cm1: %v", err)
 		}
 	}
 	if cm2 != nil {
 		if err := cmc.Delete(ctx, "default", cm2.Name, nil); err != nil {
-			log.Printf("Error deleting cm2: %v", err)
+			log.Fatalf("Error deleting cm2: %v", err)
 		}
 	}
 	if cm3 != nil {
 		if err := cmc.Delete(ctx, "default", cm3.Name, nil); err != nil {
-			log.Printf("Error deleting cm3: %v", err)
+			log.Fatalf("Error deleting cm3: %v", err)
 		}
 	}
 
@@ -224,7 +233,7 @@ func main() {
 		LabelSelector: "test=example",
 	})
 	if err != nil {
-		log.Printf("Error listing labeled configmaps: %v", err)
+		log.Fatalf("Error listing labeled configmaps: %v", err)
 	} else {
 		log.Printf("Found %d ConfigMaps with test=example label:", len(labeledCMs))
 		for _, cm := range labeledCMs {
@@ -232,8 +241,43 @@ func main() {
 		}
 	}
 
-	// List all ConfigMaps in kube-system
-	log.Println("\nLISTING ALL CONFIGMAPS IN kube-system")
+	// Demonstrate Lister functionality
+	log.Println("\nDEMONSTRATING LISTER (cache-backed operations)")
+
+	// Create a lister by registering a no-op handler.
+	// Registering an actual handler will also return the lister.
+	lister, err := cmc.Inform(ctx, generic.InformerHandler[*corev1.ConfigMap]{}, nil)
+	if err != nil {
+		log.Fatal("Error creating lister:", err)
+	}
+	// Use lister to efficiently query from cache
+	allCMs, err := lister.List(labels.Everything())
+	if err != nil {
+		log.Fatal("Error listing from cache:", err)
+	} else {
+		log.Printf("Found %d ConfigMaps in cache", len(allCMs))
+	}
+
+	// Get ConfigMap from specific namespace using cache
+	nsLister := lister.ByNamespace("kube-system")
+	cm, err := nsLister.Get("coredns")
+	if err != nil {
+		log.Fatal("Error getting coredns from cache:", err)
+	} else {
+		log.Printf("Got ConfigMap from cache: %s/%s", cm.Namespace, cm.Name)
+	}
+
+	// List with label selector from cache
+	selector := labels.SelectorFromSet(labels.Set{"k8s-app": "kube-dns"})
+	dnsCMs, err := nsLister.List(selector)
+	if err != nil {
+		log.Fatal("Error listing with selector:", err)
+	} else {
+		log.Printf("Found %d ConfigMaps with k8s-app=kube-dns label in cache", len(dnsCMs))
+	}
+
+	// List all ConfigMaps in kube-system (direct API call)
+	log.Println("\nLISTING ALL CONFIGMAPS IN kube-system (direct API)")
 	cms, err := cmc.List(ctx, "kube-system", nil)
 	if err != nil {
 		log.Fatal("listing configmaps:", err)
@@ -254,48 +298,48 @@ func main() {
 		LabelSelector: "k8s-app=kube-dns",
 	})
 	if err != nil {
-		log.Printf("Error listing pods: %v", err)
-	} else if len(dnsPods) > 0 {
-		// Get logs from the first CoreDNS pod
-		pod := dnsPods[0]
-		log.Printf("\nGETTING LOGS FROM POD %s", pod.Name)
+		log.Fatal("Error listing pods:", err)
+	}
+	if len(dnsPods) == 0 {
+		log.Fatal("No CoreDNS pods found to demonstrate GetLogs")
+	}
+	// Get logs from the first CoreDNS pod
+	pod := dnsPods[0]
+	log.Printf("\nGETTING LOGS FROM POD %s", pod.Name)
 
-		// Get last 5 lines of logs
-		tailLines := int64(5)
-		logOpts := &corev1.PodLogOptions{
+	// Get last 5 lines of logs
+	tailLines := int64(5)
+	logOpts := &corev1.PodLogOptions{
+		TailLines: &tailLines,
+	}
+
+	req := expandedPodClient.GetLogs(pod.Name, logOpts)
+	logs, err := req.DoRaw(ctx)
+	if err != nil {
+		log.Fatalf("Error getting logs: %v", err)
+	} else {
+		log.Println("Last 5 lines of logs:")
+		log.Println(string(logs))
+	}
+
+	// If the pod has multiple containers, get logs from a specific container
+	if len(pod.Spec.Containers) > 0 {
+		containerName := pod.Spec.Containers[0].Name
+		log.Printf("\nGETTING LOGS FROM CONTAINER %s", containerName)
+
+		containerLogOpts := &corev1.PodLogOptions{
+			Container: containerName,
 			TailLines: &tailLines,
 		}
 
-		req := expandedPodClient.GetLogs(pod.Name, logOpts)
+		req := expandedPodClient.GetLogs(pod.Name, containerLogOpts)
 		logs, err := req.DoRaw(ctx)
 		if err != nil {
-			log.Printf("Error getting logs: %v", err)
+			log.Fatalf("Error getting container logs: %v", err)
 		} else {
-			log.Println("Last 5 lines of logs:")
+			log.Printf("Last 5 lines from container %s:", containerName)
 			log.Println(string(logs))
 		}
-
-		// If the pod has multiple containers, get logs from a specific container
-		if len(pod.Spec.Containers) > 0 {
-			containerName := pod.Spec.Containers[0].Name
-			log.Printf("\nGETTING LOGS FROM CONTAINER %s", containerName)
-
-			containerLogOpts := &corev1.PodLogOptions{
-				Container: containerName,
-				TailLines: &tailLines,
-			}
-
-			req := expandedPodClient.GetLogs(pod.Name, containerLogOpts)
-			logs, err := req.DoRaw(ctx)
-			if err != nil {
-				log.Printf("Error getting container logs: %v", err)
-			} else {
-				log.Printf("Last 5 lines from container %s:", containerName)
-				log.Println(string(logs))
-			}
-		}
-	} else {
-		log.Println("No CoreDNS pods found to demonstrate GetLogs")
 	}
 
 	// Demonstrate using the generic SubResource method
@@ -307,7 +351,7 @@ func main() {
 		req := podClient.SubResource(pod.Namespace, pod.Name, "status")
 		statusBytes, err := req.DoRaw(ctx)
 		if err != nil {
-			log.Printf("Error getting pod status: %v", err)
+			log.Fatal("Error getting pod status:", err)
 		} else {
 			// Just show that we got data (full status would be verbose)
 			log.Printf("Got pod status (%d bytes)", len(statusBytes))

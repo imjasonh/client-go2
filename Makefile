@@ -1,8 +1,8 @@
 tidy:
 	go mod tidy
 
-example:
-	go run ./
+build:
+	go build ./...
 
 test:
 	go test -v -race ./...
@@ -19,4 +19,5 @@ fmt:
 lint:
 	golangci-lint run --fix ./...
 
-all: tidy vet fmt lint test e2e example
+.PHONY: all
+all: tidy vet fmt lint build test e2e

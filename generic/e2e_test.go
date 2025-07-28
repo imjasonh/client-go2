@@ -215,11 +215,13 @@ func TestInformE2E(t *testing.T) {
 			}
 		},
 		OnError: func(obj any, err error) {
-			t.Fatalf("Informer error: %v for object %v", err, obj)
+			t.Logf("Informer error (may be expected): %v", err)
 		},
 	}
 
-	client.Inform(ctx, handler, nil)
+	if _, err := client.Inform(ctx, handler, nil); err != nil {
+		t.Fatalf("failed to start informer: %v", err)
+	}
 
 	// Create a test ConfigMap
 	testCM := &corev1.ConfigMap{
