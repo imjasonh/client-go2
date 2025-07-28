@@ -168,22 +168,24 @@ func TestPodClientEvict(t *testing.T) {
 }
 
 func TestPodClientProxyGet(t *testing.T) {
+	mt := &mockTransport{
+		responses: map[string]mockResponse{
+			"GET /api/v1/namespaces/default/pods/http:test-pod:8080/proxy/healthz": {
+				statusCode: http.StatusOK,
+				body:       "ok",
+			},
+			"GET /api/v1/namespaces/default/pods/http:test-pod:8080/proxy/metrics?format=json": {
+				statusCode: http.StatusOK,
+				body:       `{"cpu": "100m", "memory": "256Mi"}`,
+			},
+		},
+	}
+
 	client := NewClientGVR[*corev1.Pod](
 		schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"},
 		&rest.Config{
-			Host: "http://localhost:8080",
-			Transport: &mockTransport{
-				responses: map[string]mockResponse{
-					"GET /api/v1/namespaces/default/pods/test-pod/proxy/healthz": {
-						statusCode: http.StatusOK,
-						body:       "ok",
-					},
-					"GET /api/v1/namespaces/default/pods/test-pod/proxy/metrics?format=json": {
-						statusCode: http.StatusOK,
-						body:       `{"cpu": "100m", "memory": "256Mi"}`,
-					},
-				},
-			},
+			Host:      "http://localhost:8080",
+			Transport: mt,
 		},
 	).PodClient("default")
 
@@ -216,6 +218,26 @@ func TestPodClientProxyGet(t *testing.T) {
 			t.Errorf("expected response %q, got %q", expected, string(body))
 		}
 	})
+
+	t.Run("proxy get without port", func(t *testing.T) {
+		// Add response for empty port case
+		mt.responses["GET /api/v1/namespaces/default/pods/test-pod/proxy/status"] = mockResponse{
+			statusCode: http.StatusOK,
+			body:       `{"status": "running"}`,
+		}
+
+		// When port is empty, JoinSchemeNamePort returns just the name
+		req := client.ProxyGet("", "test-pod", "", "status", nil)
+		body, err := req.DoRaw(ctx)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		expected := `{"status": "running"}`
+		if string(body) != expected {
+			t.Errorf("expected response %q, got %q", expected, string(body))
+		}
+	})
 }
 
 func TestServiceClientProxyGet(t *testing.T) {
@@ -225,7 +247,7 @@ func TestServiceClientProxyGet(t *testing.T) {
 			Host: "http://localhost:8080",
 			Transport: &mockTransport{
 				responses: map[string]mockResponse{
-					"GET /api/v1/namespaces/default/services/test-service/proxy/api/v1/health": {
+					"GET /api/v1/namespaces/default/services/http:test-service:80/proxy/api/v1/health": {
 						statusCode: http.StatusOK,
 						body:       `{"status": "healthy"}`,
 					},

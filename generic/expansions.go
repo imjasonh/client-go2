@@ -7,6 +7,7 @@ import (
 	policyv1 "k8s.io/api/policy/v1"
 	policyv1beta1 "k8s.io/api/policy/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/net"
 	"k8s.io/client-go/kubernetes/scheme"
 	typedcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/rest"
@@ -87,7 +88,7 @@ func (p PodClient) ProxyGet(scheme, name, port, path string, params map[string]s
 	request := p.client.RESTClient().Get().
 		Namespace(p.namespace).
 		Resource("pods").
-		Name(name).
+		Name(net.JoinSchemeNamePort(scheme, name, port)).
 		SubResource("proxy").
 		Suffix(path)
 	for k, v := range params {
@@ -111,7 +112,7 @@ func (s ServiceClient) ProxyGet(scheme, name, port, path string, params map[stri
 	request := s.client.RESTClient().Get().
 		Namespace(s.namespace).
 		Resource("services").
-		Name(name).
+		Name(net.JoinSchemeNamePort(scheme, name, port)).
 		SubResource("proxy").
 		Suffix(path)
 	for k, v := range params {
