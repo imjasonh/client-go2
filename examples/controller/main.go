@@ -23,8 +23,8 @@ type ConfigMapReconciler struct {
 	logger *slog.Logger
 }
 
-// ReconcileKind implements the reconciliation logic for ConfigMaps.
-func (r *ConfigMapReconciler) ReconcileKind(ctx context.Context, cm *corev1.ConfigMap) error {
+// Reconcile implements the reconciliation logic for ConfigMaps.
+func (r *ConfigMapReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap) error {
 	r.logger.Info("reconciling configmap",
 		"namespace", cm.Namespace,
 		"name", cm.Name,

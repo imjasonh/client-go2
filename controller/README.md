@@ -5,7 +5,7 @@ The `controller` package provides a generic Kubernetes controller framework insp
 ## Features
 
 - **Type-safe generic controllers** - Build controllers for any Kubernetes resource type
-- **Simple reconciler interface** - Just implement one method: `ReconcileKind` or pass a function.
+- **Simple reconciler interface** - Just implement one method: `Reconcile` or pass a function.
 - **Automatic update detection** - The framework detects and persists changes to your objects
 - **Built-in conflict resolution** - Automatic retry with exponential backoff
 - **Owner reference support** - Automatically reconcile owners when owned resources change
@@ -42,7 +42,7 @@ The core interface has just one method:
 
 ```go
 type Reconciler[T runtime.Object] interface {
-    ReconcileKind(ctx context.Context, obj T) error
+    Reconcile(ctx context.Context, obj T) error
 }
 ```
 
@@ -59,7 +59,7 @@ The controller automatically detects and persists changes made during reconcilia
 Example:
 
 ```go
-func (r *MyReconciler) ReconcileKind(ctx context.Context, pod *corev1.Pod) error {
+func (r *MyReconciler) Reconcile(ctx context.Context, pod *corev1.Pod) error {
     // These changes will be automatically persisted
     pod.Labels["processed"] = "true"
     pod.Status.Phase = corev1.PodRunning
@@ -125,7 +125,7 @@ The controller can watch owned resources and reconcile owners when owned resourc
 
 ```go
 // In your reconciler, set owner references
-func (r *MyReconciler) ReconcileKind(ctx context.Context, pod *corev1.Pod) error {
+func (r *MyReconciler) Reconcile(ctx context.Context, pod *corev1.Pod) error {
     // Create a owned secret
     secret := &corev1.Secret{...}
     

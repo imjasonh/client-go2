@@ -28,7 +28,7 @@ func TestReconcilerFunc(t *testing.T) {
 		},
 	}
 
-	err := fn.ReconcileKind(context.Background(), pod)
+	err := fn.Reconcile(context.Background(), pod)
 	if !called {
 		t.Error("reconciler function was not called")
 	}
@@ -43,7 +43,7 @@ type testReconciler struct {
 	err    error
 }
 
-func (r *testReconciler) ReconcileKind(ctx context.Context, pod *corev1.Pod) error {
+func (r *testReconciler) Reconcile(ctx context.Context, pod *corev1.Pod) error {
 	r.called = true
 	// Modify the pod to test automatic updates
 	if pod.Status.Phase == "" {
@@ -63,7 +63,7 @@ func TestReconcilerInterface(t *testing.T) {
 		},
 	}
 
-	err := r.ReconcileKind(context.Background(), pod)
+	err := r.Reconcile(context.Background(), pod)
 	if !r.called {
 		t.Error("reconciler was not called")
 	}

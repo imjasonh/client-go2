@@ -194,7 +194,7 @@ func (c *Controller[T]) processItem(ctx context.Context, key string) error {
 	original := c.deepCopy(current)
 
 	// Call user's reconciler - they modify 'current' in place
-	if err := c.reconciler.ReconcileKind(ctx, current); err != nil {
+	if err := c.reconciler.Reconcile(ctx, current); err != nil {
 		// Don't update if reconciler returned error
 		return err
 	}
@@ -228,7 +228,7 @@ func (c *Controller[T]) updateIfNeeded(ctx context.Context, original, current T)
 
 	// Warn if spec changed (not allowed)
 	if specChanged {
-		clog.WarnContext(ctx, "spec changes ignored in ReconcileKind",
+		clog.WarnContext(ctx, "spec changes ignored in Reconcile",
 			"namespace", origMeta.Namespace,
 			"name", origMeta.Name)
 	}
