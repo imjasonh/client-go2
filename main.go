@@ -189,8 +189,7 @@ func main() {
 	if cm2 != nil {
 		log.Printf("\nUPDATING CONFIGMAP %s", cm2.Name)
 		cm2.Data["hello"] = "updated"
-		_, err = cmc.Update(ctx, "default", cm2, nil)
-		if err != nil {
+		if _, err := cmc.Update(ctx, "default", cm2, nil); err != nil {
 			log.Printf("Error updating cm2: %v", err)
 		}
 	}

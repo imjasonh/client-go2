@@ -745,10 +745,9 @@ func TestDeleteCollection(t *testing.T) {
 		body:       `{"kind":"Status","apiVersion":"v1","metadata":{},"status":"Success"}`,
 	}
 
-	err = client.DeleteCollection(ctx, namespace, nil, &metav1.ListOptions{
+	if err := client.DeleteCollection(ctx, namespace, nil, &metav1.ListOptions{
 		LabelSelector: "app=test",
-	})
-	if err != nil {
+	}); err != nil {
 		t.Fatalf("DeleteCollection with selector failed: %v", err)
 	}
 }

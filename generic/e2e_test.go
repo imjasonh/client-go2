@@ -337,8 +337,7 @@ func TestPodClientExpansionE2E(t *testing.T) {
 			TailLines: &tailLines,
 		}
 		req = podClient.GetLogs(testPod.Name, logOpts)
-		logs, err = req.DoRaw(ctx)
-		if err != nil {
+		if logs, err := req.DoRaw(ctx); err != nil {
 			t.Logf("GetLogs with TailLines returned error: %v", err)
 		} else {
 			t.Logf("Successfully retrieved last 5 lines of logs (%d bytes)", len(logs))
@@ -362,8 +361,7 @@ func TestPodClientExpansionE2E(t *testing.T) {
 				TailLines: &tailLines,
 			}
 			req = podClient.GetLogs(testPod.Name, containerOpts)
-			logs, err = req.DoRaw(ctx)
-			if err != nil {
+			if logs, err := req.DoRaw(ctx); err != nil {
 				t.Logf("GetLogs for container %s returned error: %v", containerName, err)
 			} else {
 				t.Logf("Successfully retrieved logs from container %s (%d bytes)", containerName, len(logs))
