@@ -18,8 +18,14 @@ type ConfigMapReconciler struct {
 	secretLister *generic.Lister[*corev1.Secret]
 }
 
-func (r *ConfigMapReconciler) ReconcileKind(ctx context.Context, cm *corev1.ConfigMap) error {
+func (r *ConfigMapReconciler) Reconcile(ctx context.Context, cm *corev1.ConfigMap) error {
 	log := clog.FromContext(ctx)
+
+	// Check if secretLister is available
+	if r.secretLister == nil {
+		log.Info("Secret lister not available yet")
+		return nil
+	}
 
 	// List secrets in the same namespace
 	secrets, err := r.secretLister.ByNamespace(cm.Namespace).List(labels.Everything())

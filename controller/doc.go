@@ -31,7 +31,7 @@
 //	    // dependencies
 //	}
 //
-//	func (r *MyReconciler) ReconcileKind(ctx context.Context, pod *corev1.Pod) error {
+//	func (r *MyReconciler) Reconcile(ctx context.Context, pod *corev1.Pod) error {
 //	    // Complex reconciliation logic
 //	    return nil
 //	}

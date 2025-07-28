@@ -36,8 +36,8 @@ type PodReconciler struct {
 	// Add dependencies here
 }
 
-// ReconcileKind implements the Reconciler interface.
-func (r *PodReconciler) ReconcileKind(ctx context.Context, pod *corev1.Pod) error {
+// Reconcile implements the Reconciler interface.
+func (r *PodReconciler) Reconcile(ctx context.Context, pod *corev1.Pod) error {
 	// Complex reconciliation logic
 	if pod.DeletionTimestamp != nil {
 		// Handle deletion
