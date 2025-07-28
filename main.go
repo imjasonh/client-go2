@@ -243,4 +243,75 @@ func main() {
 	for _, cm := range cms {
 		log.Println("-", cm.Name)
 	}
+
+	// Demonstrate Pod expansion methods
+	log.Println("\n=== POD EXPANSION EXAMPLE ===")
+
+	// Get a namespace-scoped PodClient with expansion methods from the existing pod client
+	expandedPodClient := podClient.PodClient("kube-system")
+
+	// List pods to find one to get logs from
+	dnsPods, err := podClient.List(ctx, "kube-system", &metav1.ListOptions{
+		LabelSelector: "k8s-app=kube-dns",
+	})
+	if err != nil {
+		log.Printf("Error listing pods: %v", err)
+	} else if len(dnsPods) > 0 {
+		// Get logs from the first CoreDNS pod
+		pod := dnsPods[0]
+		log.Printf("\nGETTING LOGS FROM POD %s", pod.Name)
+
+		// Get last 5 lines of logs
+		tailLines := int64(5)
+		logOpts := &corev1.PodLogOptions{
+			TailLines: &tailLines,
+		}
+
+		req := expandedPodClient.GetLogs(pod.Name, logOpts)
+		logs, err := req.DoRaw(ctx)
+		if err != nil {
+			log.Printf("Error getting logs: %v", err)
+		} else {
+			log.Println("Last 5 lines of logs:")
+			log.Println(string(logs))
+		}
+
+		// If the pod has multiple containers, get logs from a specific container
+		if len(pod.Spec.Containers) > 0 {
+			containerName := pod.Spec.Containers[0].Name
+			log.Printf("\nGETTING LOGS FROM CONTAINER %s", containerName)
+
+			containerLogOpts := &corev1.PodLogOptions{
+				Container: containerName,
+				TailLines: &tailLines,
+			}
+
+			req := expandedPodClient.GetLogs(pod.Name, containerLogOpts)
+			logs, err := req.DoRaw(ctx)
+			if err != nil {
+				log.Printf("Error getting container logs: %v", err)
+			} else {
+				log.Printf("Last 5 lines from container %s:", containerName)
+				log.Println(string(logs))
+			}
+		}
+	} else {
+		log.Println("No CoreDNS pods found to demonstrate GetLogs")
+	}
+
+	// Demonstrate using the generic SubResource method
+	log.Println("\n=== SUBRESOURCE EXAMPLE ===")
+	if len(dnsPods) > 0 {
+		pod := dnsPods[0]
+		log.Printf("Getting status subresource for pod %s", pod.Name)
+
+		req := podClient.SubResource(pod.Namespace, pod.Name, "status")
+		statusBytes, err := req.DoRaw(ctx)
+		if err != nil {
+			log.Printf("Error getting pod status: %v", err)
+		} else {
+			// Just show that we got data (full status would be verbose)
+			log.Printf("Got pod status (%d bytes)", len(statusBytes))
+		}
+	}
 }

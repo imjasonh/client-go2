@@ -47,20 +47,18 @@ func (m *mockTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 func TestNewClientGVR(t *testing.T) {
-	gvr := schema.GroupVersionResource{
-		Group:    "",
-		Version:  "v1",
-		Resource: "pods",
-	}
+	gvr := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}
 
-	config := &rest.Config{
-		Host: "http://localhost",
-		ContentConfig: rest.ContentConfig{
-			GroupVersion:         &schema.GroupVersion{Version: "v1"},
-			NegotiatedSerializer: serializer.NewCodecFactory(runtime.NewScheme()).WithoutConversion(),
+	client := NewClientGVR[*corev1.Pod](
+		gvr,
+		&rest.Config{
+			Host: "http://localhost",
+			ContentConfig: rest.ContentConfig{
+				GroupVersion:         &schema.GroupVersion{Version: "v1"},
+				NegotiatedSerializer: serializer.NewCodecFactory(runtime.NewScheme()).WithoutConversion(),
+			},
 		},
-	}
-	client := NewClientGVR[*corev1.Pod](gvr, config)
+	)
 
 	if client.gvr != gvr {
 		t.Errorf("expected GVR %v, got %v", gvr, client.gvr)
@@ -102,40 +100,25 @@ func TestList(t *testing.T) {
 
 	listJSON, _ := json.Marshal(podList)
 
-	transport := &mockTransport{
-		responses: map[string]mockResponse{
-			"GET /api/v1/namespaces/test-namespace/pods": {
-				statusCode: 200,
-				body:       string(listJSON),
+	client := NewClientGVR[*corev1.Pod](
+		schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"},
+		&rest.Config{
+			Host:    "http://localhost",
+			APIPath: "/api",
+			Transport: &mockTransport{
+				responses: map[string]mockResponse{
+					"GET /api/v1/namespaces/test-namespace/pods": {
+						statusCode: 200,
+						body:       string(listJSON),
+					},
+				},
+			},
+			ContentConfig: rest.ContentConfig{
+				GroupVersion:         &schema.GroupVersion{Version: "v1"},
+				NegotiatedSerializer: serializer.NewCodecFactory(runtime.NewScheme()).WithoutConversion(),
 			},
 		},
-	}
-
-	config := &rest.Config{
-		Host:      "http://localhost",
-		APIPath:   "/api",
-		Transport: transport,
-		ContentConfig: rest.ContentConfig{
-			GroupVersion:         &schema.GroupVersion{Version: "v1"},
-			NegotiatedSerializer: serializer.NewCodecFactory(runtime.NewScheme()).WithoutConversion(),
-		},
-	}
-
-	restClient, err := rest.RESTClientFor(config)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	gvr := schema.GroupVersionResource{
-		Group:    "",
-		Version:  "v1",
-		Resource: "pods",
-	}
-
-	client := Client[*corev1.Pod]{
-		gvr:        gvr,
-		restClient: restClient,
-	}
+	)
 
 	pods, err := client.List(ctx, namespace, nil)
 	if err != nil {
@@ -182,40 +165,25 @@ func TestGet(t *testing.T) {
 
 	podJSON, _ := json.Marshal(expectedPod)
 
-	transport := &mockTransport{
-		responses: map[string]mockResponse{
-			"GET /api/v1/namespaces/test-namespace/pods/test-pod": {
-				statusCode: 200,
-				body:       string(podJSON),
+	client := NewClientGVR[*corev1.Pod](
+		schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"},
+		&rest.Config{
+			Host:    "http://localhost",
+			APIPath: "/api",
+			Transport: &mockTransport{
+				responses: map[string]mockResponse{
+					"GET /api/v1/namespaces/test-namespace/pods/test-pod": {
+						statusCode: 200,
+						body:       string(podJSON),
+					},
+				},
+			},
+			ContentConfig: rest.ContentConfig{
+				GroupVersion:         &schema.GroupVersion{Version: "v1"},
+				NegotiatedSerializer: serializer.NewCodecFactory(runtime.NewScheme()).WithoutConversion(),
 			},
 		},
-	}
-
-	config := &rest.Config{
-		Host:      "http://localhost",
-		APIPath:   "/api",
-		Transport: transport,
-		ContentConfig: rest.ContentConfig{
-			GroupVersion:         &schema.GroupVersion{Version: "v1"},
-			NegotiatedSerializer: serializer.NewCodecFactory(runtime.NewScheme()).WithoutConversion(),
-		},
-	}
-
-	restClient, err := rest.RESTClientFor(config)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	gvr := schema.GroupVersionResource{
-		Group:    "",
-		Version:  "v1",
-		Resource: "pods",
-	}
-
-	client := Client[*corev1.Pod]{
-		gvr:        gvr,
-		restClient: restClient,
-	}
+	)
 
 	pod, err := client.Get(ctx, namespace, podName, nil)
 	if err != nil {
@@ -256,44 +224,29 @@ func TestCreate(t *testing.T) {
 
 	podJSON, _ := json.Marshal(newPod)
 
-	transport := &mockTransport{
-		responses: map[string]mockResponse{
-			"POST /api/v1/namespaces/test-namespace/pods": {
-				statusCode: 201,
-				body:       string(podJSON),
+	client := NewClientGVR[*corev1.Pod](
+		schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"},
+		&rest.Config{
+			Host:    "http://localhost",
+			APIPath: "/api",
+			Transport: &mockTransport{
+				responses: map[string]mockResponse{
+					"POST /api/v1/namespaces/test-namespace/pods": {
+						statusCode: 201,
+						body:       string(podJSON),
+					},
+					"GET /api/v1/namespaces/test-namespace/pods/new-pod": {
+						statusCode: 200,
+						body:       string(podJSON),
+					},
+				},
 			},
-			"GET /api/v1/namespaces/test-namespace/pods/new-pod": {
-				statusCode: 200,
-				body:       string(podJSON),
+			ContentConfig: rest.ContentConfig{
+				GroupVersion:         &schema.GroupVersion{Version: "v1"},
+				NegotiatedSerializer: serializer.NewCodecFactory(runtime.NewScheme()).WithoutConversion(),
 			},
 		},
-	}
-
-	config := &rest.Config{
-		Host:      "http://localhost",
-		APIPath:   "/api",
-		Transport: transport,
-		ContentConfig: rest.ContentConfig{
-			GroupVersion:         &schema.GroupVersion{Version: "v1"},
-			NegotiatedSerializer: serializer.NewCodecFactory(runtime.NewScheme()).WithoutConversion(),
-		},
-	}
-
-	restClient, err := rest.RESTClientFor(config)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	gvr := schema.GroupVersionResource{
-		Group:    "",
-		Version:  "v1",
-		Resource: "pods",
-	}
-
-	client := Client[*corev1.Pod]{
-		gvr:        gvr,
-		restClient: restClient,
-	}
+	)
 
 	created, err := client.Create(ctx, namespace, newPod, nil)
 	if err != nil {
@@ -344,44 +297,29 @@ func TestUpdate(t *testing.T) {
 
 	updatedJSON, _ := json.Marshal(updatedPod)
 
-	transport := &mockTransport{
-		responses: map[string]mockResponse{
-			"PUT /api/v1/namespaces/test-namespace/pods/update-pod": {
-				statusCode: 200,
-				body:       string(updatedJSON),
+	client := NewClientGVR[*corev1.Pod](
+		schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"},
+		&rest.Config{
+			Host:    "http://localhost",
+			APIPath: "/api",
+			Transport: &mockTransport{
+				responses: map[string]mockResponse{
+					"PUT /api/v1/namespaces/test-namespace/pods/update-pod": {
+						statusCode: 200,
+						body:       string(updatedJSON),
+					},
+					"GET /api/v1/namespaces/test-namespace/pods/update-pod": {
+						statusCode: 200,
+						body:       string(updatedJSON),
+					},
+				},
 			},
-			"GET /api/v1/namespaces/test-namespace/pods/update-pod": {
-				statusCode: 200,
-				body:       string(updatedJSON),
+			ContentConfig: rest.ContentConfig{
+				GroupVersion:         &schema.GroupVersion{Version: "v1"},
+				NegotiatedSerializer: serializer.NewCodecFactory(runtime.NewScheme()).WithoutConversion(),
 			},
 		},
-	}
-
-	config := &rest.Config{
-		Host:      "http://localhost",
-		APIPath:   "/api",
-		Transport: transport,
-		ContentConfig: rest.ContentConfig{
-			GroupVersion:         &schema.GroupVersion{Version: "v1"},
-			NegotiatedSerializer: serializer.NewCodecFactory(runtime.NewScheme()).WithoutConversion(),
-		},
-	}
-
-	restClient, err := rest.RESTClientFor(config)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	gvr := schema.GroupVersionResource{
-		Group:    "",
-		Version:  "v1",
-		Resource: "pods",
-	}
-
-	client := Client[*corev1.Pod]{
-		gvr:        gvr,
-		restClient: restClient,
-	}
+	)
 
 	updated, err := client.Update(ctx, namespace, updatedPod, nil)
 	if err != nil {
@@ -407,40 +345,25 @@ func TestDelete(t *testing.T) {
 	ctx := context.Background()
 	namespace := "test-namespace"
 
-	transport := &mockTransport{
-		responses: map[string]mockResponse{
-			"DELETE /api/v1/namespaces/test-namespace/pods/delete-pod": {
-				statusCode: 200,
-				body:       `{"kind":"Status","apiVersion":"v1","metadata":{},"status":"Success"}`,
+	client := NewClientGVR[*corev1.Pod](
+		schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"},
+		&rest.Config{
+			Host:    "http://localhost",
+			APIPath: "/api",
+			Transport: &mockTransport{
+				responses: map[string]mockResponse{
+					"DELETE /api/v1/namespaces/test-namespace/pods/delete-pod": {
+						statusCode: 200,
+						body:       `{"kind":"Status","apiVersion":"v1","metadata":{},"status":"Success"}`,
+					},
+				},
+			},
+			ContentConfig: rest.ContentConfig{
+				GroupVersion:         &schema.GroupVersion{Version: "v1"},
+				NegotiatedSerializer: serializer.NewCodecFactory(runtime.NewScheme()).WithoutConversion(),
 			},
 		},
-	}
-
-	config := &rest.Config{
-		Host:      "http://localhost",
-		APIPath:   "/api",
-		Transport: transport,
-		ContentConfig: rest.ContentConfig{
-			GroupVersion:         &schema.GroupVersion{Version: "v1"},
-			NegotiatedSerializer: serializer.NewCodecFactory(runtime.NewScheme()).WithoutConversion(),
-		},
-	}
-
-	restClient, err := rest.RESTClientFor(config)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	gvr := schema.GroupVersionResource{
-		Group:    "",
-		Version:  "v1",
-		Resource: "pods",
-	}
-
-	client := Client[*corev1.Pod]{
-		gvr:        gvr,
-		restClient: restClient,
-	}
+	)
 
 	// Delete the pod
 	if err := client.Delete(ctx, namespace, "delete-pod", nil); err != nil {
@@ -469,40 +392,25 @@ func TestPatch(t *testing.T) {
 
 	podJSON, _ := json.Marshal(pod)
 
-	transport := &mockTransport{
-		responses: map[string]mockResponse{
-			"PATCH /api/v1/namespaces/test-namespace/pods/patch-pod": {
-				statusCode: 200,
-				body:       string(podJSON),
+	client := NewClientGVR[*corev1.Pod](
+		schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"},
+		&rest.Config{
+			Host:    "http://localhost",
+			APIPath: "/api",
+			Transport: &mockTransport{
+				responses: map[string]mockResponse{
+					"PATCH /api/v1/namespaces/test-namespace/pods/patch-pod": {
+						statusCode: 200,
+						body:       string(podJSON),
+					},
+				},
+			},
+			ContentConfig: rest.ContentConfig{
+				GroupVersion:         &schema.GroupVersion{Version: "v1"},
+				NegotiatedSerializer: serializer.NewCodecFactory(runtime.NewScheme()).WithoutConversion(),
 			},
 		},
-	}
-
-	config := &rest.Config{
-		Host:      "http://localhost",
-		APIPath:   "/api",
-		Transport: transport,
-		ContentConfig: rest.ContentConfig{
-			GroupVersion:         &schema.GroupVersion{Version: "v1"},
-			NegotiatedSerializer: serializer.NewCodecFactory(runtime.NewScheme()).WithoutConversion(),
-		},
-	}
-
-	restClient, err := rest.RESTClientFor(config)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	gvr := schema.GroupVersionResource{
-		Group:    "",
-		Version:  "v1",
-		Resource: "pods",
-	}
-
-	client := Client[*corev1.Pod]{
-		gvr:        gvr,
-		restClient: restClient,
-	}
+	)
 
 	// Create a JSON patch
 	patchData := []byte(`{"op": "add", "path": "/metadata/labels/environment", "value": "production"}`)
@@ -541,40 +449,25 @@ func TestGenericWithConfigMap(t *testing.T) {
 
 	listJSON, _ := json.Marshal(cmList)
 
-	transport := &mockTransport{
-		responses: map[string]mockResponse{
-			"GET /api/v1/namespaces/test-namespace/configmaps": {
-				statusCode: 200,
-				body:       string(listJSON),
+	client := NewClientGVR[*corev1.ConfigMap](
+		schema.GroupVersionResource{Group: "", Version: "v1", Resource: "configmaps"},
+		&rest.Config{
+			Host:    "http://localhost",
+			APIPath: "/api",
+			Transport: &mockTransport{
+				responses: map[string]mockResponse{
+					"GET /api/v1/namespaces/test-namespace/configmaps": {
+						statusCode: 200,
+						body:       string(listJSON),
+					},
+				},
+			},
+			ContentConfig: rest.ContentConfig{
+				GroupVersion:         &schema.GroupVersion{Version: "v1"},
+				NegotiatedSerializer: serializer.NewCodecFactory(runtime.NewScheme()).WithoutConversion(),
 			},
 		},
-	}
-
-	config := &rest.Config{
-		Host:      "http://localhost",
-		APIPath:   "/api",
-		Transport: transport,
-		ContentConfig: rest.ContentConfig{
-			GroupVersion:         &schema.GroupVersion{Version: "v1"},
-			NegotiatedSerializer: serializer.NewCodecFactory(runtime.NewScheme()).WithoutConversion(),
-		},
-	}
-
-	restClient, err := rest.RESTClientFor(config)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	gvr := schema.GroupVersionResource{
-		Group:    "",
-		Version:  "v1",
-		Resource: "configmaps",
-	}
-
-	client := Client[*corev1.ConfigMap]{
-		gvr:        gvr,
-		restClient: restClient,
-	}
+	)
 
 	// Test List
 	configs, err := client.List(ctx, namespace, nil)
@@ -657,40 +550,25 @@ func TestListWithLabelSelector(t *testing.T) {
 
 	listJSON, _ := json.Marshal(podList)
 
-	transport := &mockTransport{
-		responses: map[string]mockResponse{
-			"GET /api/v1/namespaces/test-namespace/pods?labelSelector=app%3Dtest": {
-				statusCode: 200,
-				body:       string(listJSON),
+	client := NewClientGVR[*corev1.Pod](
+		schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"},
+		&rest.Config{
+			Host:    "http://localhost",
+			APIPath: "/api",
+			Transport: &mockTransport{
+				responses: map[string]mockResponse{
+					"GET /api/v1/namespaces/test-namespace/pods?labelSelector=app%3Dtest": {
+						statusCode: 200,
+						body:       string(listJSON),
+					},
+				},
+			},
+			ContentConfig: rest.ContentConfig{
+				GroupVersion:         &schema.GroupVersion{Version: "v1"},
+				NegotiatedSerializer: serializer.NewCodecFactory(runtime.NewScheme()).WithoutConversion(),
 			},
 		},
-	}
-
-	config := &rest.Config{
-		Host:      "http://localhost",
-		APIPath:   "/api",
-		Transport: transport,
-		ContentConfig: rest.ContentConfig{
-			GroupVersion:         &schema.GroupVersion{Version: "v1"},
-			NegotiatedSerializer: serializer.NewCodecFactory(runtime.NewScheme()).WithoutConversion(),
-		},
-	}
-
-	restClient, err := rest.RESTClientFor(config)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	gvr := schema.GroupVersionResource{
-		Group:    "",
-		Version:  "v1",
-		Resource: "pods",
-	}
-
-	client := Client[*corev1.Pod]{
-		gvr:        gvr,
-		restClient: restClient,
-	}
+	)
 
 	// List with label selector
 	pods, err := client.List(ctx, namespace, &metav1.ListOptions{
@@ -738,40 +616,25 @@ func TestListWithFieldSelector(t *testing.T) {
 
 	listJSON, _ := json.Marshal(podList)
 
-	transport := &mockTransport{
-		responses: map[string]mockResponse{
-			"GET /api/v1/namespaces/test-namespace/pods?fieldSelector=status.phase%3DRunning": {
-				statusCode: 200,
-				body:       string(listJSON),
+	client := NewClientGVR[*corev1.Pod](
+		schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"},
+		&rest.Config{
+			Host:    "http://localhost",
+			APIPath: "/api",
+			Transport: &mockTransport{
+				responses: map[string]mockResponse{
+					"GET /api/v1/namespaces/test-namespace/pods?fieldSelector=status.phase%3DRunning": {
+						statusCode: 200,
+						body:       string(listJSON),
+					},
+				},
+			},
+			ContentConfig: rest.ContentConfig{
+				GroupVersion:         &schema.GroupVersion{Version: "v1"},
+				NegotiatedSerializer: serializer.NewCodecFactory(runtime.NewScheme()).WithoutConversion(),
 			},
 		},
-	}
-
-	config := &rest.Config{
-		Host:      "http://localhost",
-		APIPath:   "/api",
-		Transport: transport,
-		ContentConfig: rest.ContentConfig{
-			GroupVersion:         &schema.GroupVersion{Version: "v1"},
-			NegotiatedSerializer: serializer.NewCodecFactory(runtime.NewScheme()).WithoutConversion(),
-		},
-	}
-
-	restClient, err := rest.RESTClientFor(config)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	gvr := schema.GroupVersionResource{
-		Group:    "",
-		Version:  "v1",
-		Resource: "pods",
-	}
-
-	client := Client[*corev1.Pod]{
-		gvr:        gvr,
-		restClient: restClient,
-	}
+	)
 
 	// List with field selector
 	pods, err := client.List(ctx, namespace, &metav1.ListOptions{
@@ -787,5 +650,187 @@ func TestListWithFieldSelector(t *testing.T) {
 
 	if pods[0].Name != "running-pod" {
 		t.Errorf("expected running-pod, got %s", pods[0].Name)
+	}
+}
+
+// TestWatch tests the Watch method
+func TestWatch(t *testing.T) {
+	ctx := context.Background()
+	namespace := "test-namespace"
+
+	transport := &mockTransport{
+		responses: map[string]mockResponse{
+			"GET /api/v1/namespaces/test-namespace/pods?watch=true": {
+				statusCode: 200,
+				body:       "",
+			},
+		},
+	}
+
+	client := NewClientGVR[*corev1.Pod](
+		schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"},
+		&rest.Config{
+			Host:      "http://localhost",
+			APIPath:   "/api",
+			Transport: transport,
+			ContentConfig: rest.ContentConfig{
+				GroupVersion:         &schema.GroupVersion{Version: "v1"},
+				NegotiatedSerializer: serializer.NewCodecFactory(runtime.NewScheme()).WithoutConversion(),
+			},
+		},
+	)
+
+	// Test basic watch
+	watcher, err := client.Watch(ctx, namespace, nil)
+	if err != nil {
+		t.Fatalf("Watch failed: %v", err)
+	}
+	if watcher == nil {
+		t.Error("expected non-nil watcher")
+	}
+
+	// Test watch with label selector
+	transport.responses["GET /api/v1/namespaces/test-namespace/pods?labelSelector=app%3Dtest&watch=true"] = mockResponse{
+		statusCode: 200,
+		body:       "",
+	}
+
+	watcher2, err := client.Watch(ctx, namespace, &metav1.ListOptions{
+		LabelSelector: "app=test",
+	})
+	if err != nil {
+		t.Fatalf("Watch with selector failed: %v", err)
+	}
+	if watcher2 == nil {
+		t.Error("expected non-nil watcher with selector")
+	}
+}
+
+// TestDeleteCollection tests the DeleteCollection method
+func TestDeleteCollection(t *testing.T) {
+	ctx := context.Background()
+	namespace := "test-namespace"
+
+	transport := &mockTransport{
+		responses: map[string]mockResponse{
+			"DELETE /api/v1/namespaces/test-namespace/pods": {
+				statusCode: 200,
+				body:       `{"kind":"Status","apiVersion":"v1","metadata":{},"status":"Success"}`,
+			},
+		},
+	}
+
+	client := NewClientGVR[*corev1.Pod](
+		schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"},
+		&rest.Config{
+			Host:      "http://localhost",
+			APIPath:   "/api",
+			Transport: transport,
+			ContentConfig: rest.ContentConfig{
+				GroupVersion:         &schema.GroupVersion{Version: "v1"},
+				NegotiatedSerializer: serializer.NewCodecFactory(runtime.NewScheme()).WithoutConversion(),
+			},
+		},
+	)
+
+	// Test basic delete collection
+	err := client.DeleteCollection(ctx, namespace, nil, nil)
+	if err != nil {
+		t.Fatalf("DeleteCollection failed: %v", err)
+	}
+
+	// Test delete collection with label selector
+	transport.responses["DELETE /api/v1/namespaces/test-namespace/pods?labelSelector=app%3Dtest"] = mockResponse{
+		statusCode: 200,
+		body:       `{"kind":"Status","apiVersion":"v1","metadata":{},"status":"Success"}`,
+	}
+
+	err = client.DeleteCollection(ctx, namespace, nil, &metav1.ListOptions{
+		LabelSelector: "app=test",
+	})
+	if err != nil {
+		t.Fatalf("DeleteCollection with selector failed: %v", err)
+	}
+}
+
+// TestUpdateStatus tests the UpdateStatus method
+func TestUpdateStatus(t *testing.T) {
+	ctx := context.Background()
+	namespace := "test-namespace"
+
+	updatedPod := &corev1.Pod{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Pod",
+			APIVersion: "v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-pod",
+			Namespace: namespace,
+		},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodRunning,
+			Conditions: []corev1.PodCondition{
+				{
+					Type:   corev1.PodReady,
+					Status: corev1.ConditionTrue,
+				},
+			},
+		},
+	}
+
+	podJSON, _ := json.Marshal(updatedPod)
+
+	client := NewClientGVR[*corev1.Pod](
+		schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"},
+		&rest.Config{
+			Host:    "http://localhost",
+			APIPath: "/api",
+			Transport: &mockTransport{
+				responses: map[string]mockResponse{
+					"PUT /api/v1/namespaces/test-namespace/pods/test-pod/status": {
+						statusCode: 200,
+						body:       string(podJSON),
+					},
+				},
+			},
+			ContentConfig: rest.ContentConfig{
+				GroupVersion:         &schema.GroupVersion{Version: "v1"},
+				NegotiatedSerializer: serializer.NewCodecFactory(runtime.NewScheme()).WithoutConversion(),
+			},
+		},
+	)
+
+	// Update status
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-pod",
+			Namespace: namespace,
+		},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodRunning,
+			Conditions: []corev1.PodCondition{
+				{
+					Type:   corev1.PodReady,
+					Status: corev1.ConditionTrue,
+				},
+			},
+		},
+	}
+
+	result, err := client.UpdateStatus(ctx, namespace, pod, nil)
+	if err != nil {
+		t.Fatalf("UpdateStatus failed: %v", err)
+	}
+
+	if result.Name != "test-pod" {
+		t.Errorf("expected pod name 'test-pod', got '%s'", result.Name)
+	}
+
+	if result.Status.Phase != corev1.PodRunning {
+		t.Errorf("expected status phase Running, got %s", result.Status.Phase)
+	}
+
+	if len(result.Status.Conditions) != 1 || result.Status.Conditions[0].Type != corev1.PodReady {
+		t.Error("expected Ready condition in status")
 	}
 }

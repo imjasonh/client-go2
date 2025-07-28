@@ -62,7 +62,8 @@ The library uses Go generics with type parameter `[T runtime.Object]` to provide
    - For custom resources or when you need explicit control over the GVR
 
 ### Key Components
-- `generic/client.go`: Core client implementation with CRUD operations (List, Get, Create, Update, Delete, Patch)
+- `generic/client.go`: Core client implementation with CRUD operations (List, Get, Create, Update, Delete, Patch, Watch, DeleteCollection, UpdateStatus)
+- `generic/expansions.go`: Resource-specific expansion methods (PodClient, ServiceClient) that implement client-go interfaces
 - `generic/informer.go`: Type-safe informer implementation for watching resources
 - `generic/client_test.go`: Unit tests with REST client mocking
 - `generic/e2e_test.go`: Integration tests that require a real Kubernetes cluster
@@ -71,6 +72,40 @@ The library uses Go generics with type parameter `[T runtime.Object]` to provide
 - Unit tests use a custom `mockTransport` that implements `http.RoundTripper`
 - Mock responses are set up per HTTP method and path combination
 - E2e tests create real resources in a Kind cluster and verify operations
+- Prefer inline configuration pattern when creating clients in tests (see examples below)
+
+### Expansion Methods Design
+The library provides resource-specific expansion methods that maintain exact compatibility with k8s.io/client-go interfaces:
+
+- `PodClient(namespace)` returns a namespace-scoped client implementing `typedcorev1.PodExpansion`
+- `ServiceClient(namespace)` returns a namespace-scoped client implementing `typedcorev1.ServiceExpansion`
+- These methods use runtime type assertions and will panic if called on the wrong type for compile-time-like safety
+- Example: `client.PodClient("default").GetLogs("my-pod", opts)`
+
+### Test Configuration Pattern
+Always use the inline configuration pattern in tests:
+
+```go
+client := NewClientGVR[*corev1.Pod](
+    schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"},
+    &rest.Config{
+        Host:    "http://localhost",
+        APIPath: "/api",
+        Transport: &mockTransport{
+            responses: map[string]mockResponse{
+                "GET /api/v1/namespaces/test-namespace/pods": {
+                    statusCode: 200,
+                    body:       string(listJSON),
+                },
+            },
+        },
+        ContentConfig: rest.ContentConfig{
+            GroupVersion:         &schema.GroupVersion{Version: "v1"},
+            NegotiatedSerializer: serializer.NewCodecFactory(runtime.NewScheme()).WithoutConversion(),
+        },
+    },
+)
+```
 
 ## Important Rules
 
@@ -78,3 +113,4 @@ The library uses Go generics with type parameter `[T runtime.Object]` to provide
 2. When comparing structs in tests, use `github.com/google/go-cmp/cmp.Diff` for better error messages
 3. Follow the existing code style - inline struct initialization, single-line error checks where appropriate
 4. The library requires Go 1.22.0+ due to generic constraints
+5. Always maintain exact compatibility with k8s.io/client-go interfaces - do not create custom interfaces
