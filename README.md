@@ -12,6 +12,7 @@ This is an experimental type-parameter-aware client that wraps [`k8s.io/client-g
 - **Informer support** - Watch for changes with type-safe event handlers
 - **Automatic GVR inference** - No need to manually specify GroupVersionResource for standard Kubernetes types
 - **Expansion methods** - Resource-specific operations like Pod.GetLogs() and Service.ProxyGet()
+- **Support for CRDs**
 - **Label/Field selectors** - Filter resources using Kubernetes selectors
 - **SubResource access** - Generic method to access any subresource
 - **[Generic Controller Framework](./controller/README.md)** - Build Kubernetes controllers with automatic update detection and conflict resolution
