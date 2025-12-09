@@ -6,9 +6,9 @@ toolchain go1.24.4
 
 require (
 	github.com/chainguard-dev/clog v1.7.0
-	k8s.io/api v0.34.0
-	k8s.io/apimachinery v0.34.0
-	k8s.io/client-go v0.34.0
+	k8s.io/api v0.34.2
+	k8s.io/apimachinery v0.34.2
+	k8s.io/client-go v0.34.2
 )
 
 require (
