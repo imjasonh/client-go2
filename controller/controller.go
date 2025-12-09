@@ -127,7 +127,7 @@ func (c *Controller[T]) Run(ctx context.Context) error {
 
 	// Start watching owned resources
 	for _, owned := range c.ownedTypes {
-		lister, err := c.WatchOwned(ctx, owned.Client, owned.IsController)
+		lister, err := WatchOwned(ctx, c, owned.Client, owned.IsController)
 		if err != nil {
 			return fmt.Errorf("failed to watch owned resources: %w", err)
 		}
