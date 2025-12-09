@@ -47,22 +47,24 @@ func NewClientGVR[T runtime.Object](gvr schema.GroupVersionResource, config *res
 	// Create a copy of the config to avoid modifying the original
 	configCopy := rest.CopyConfig(config)
 
-	// Set the GroupVersion in the config if not already set
-	if configCopy.GroupVersion == nil {
+	// For CRDs (non-empty group), include full path and use core v1 for parameter encoding
+	// For built-in types (empty group), use traditional GroupVersion approach
+	if gvr.Group != "" {
+		// CRD: Full path in APIPath, core v1 for GroupVersion (fixes parameter encoding)
+		configCopy.APIPath = "/apis/" + gvr.Group + "/" + gvr.Version
+		configCopy.GroupVersion = &schema.GroupVersion{Group: "", Version: "v1"}
+	} else {
+		// Built-in type: Use traditional approach
 		gv := schema.GroupVersion{Group: gvr.Group, Version: gvr.Version}
-		configCopy.GroupVersion = &gv
-	}
-
-	// Set the APIPath based on whether it's a core group or not
-	if configCopy.APIPath == "" {
-		if gvr.Group == "" {
+		if configCopy.GroupVersion == nil {
+			configCopy.GroupVersion = &gv
+		}
+		if configCopy.APIPath == "" {
 			configCopy.APIPath = "/api"
-		} else {
-			configCopy.APIPath = "/apis"
 		}
 	}
 
-	// Ensure we have a negotiated serializer
+	// Use the standard Kubernetes codecs for serialization
 	if configCopy.NegotiatedSerializer == nil {
 		configCopy.NegotiatedSerializer = scheme.Codecs.WithoutConversion()
 	}
@@ -143,6 +145,25 @@ func inferGVR[T runtime.Object](config *rest.Config) (schema.GroupVersionResourc
 type Client[T runtime.Object] struct {
 	gvr        schema.GroupVersionResource
 	restClient *rest.RESTClient
+}
+
+// isCRD returns true if this client was configured for a CRD (non-empty group)
+func (c Client[T]) isCRD() bool {
+	return c.gvr.Group != ""
+}
+
+// resourcePath returns the base path for this resource, accounting for namespace
+func (c Client[T]) resourcePath(namespace string) string {
+	if !c.isCRD() {
+		return "" // Not used for built-in types
+	}
+
+	// CRD: Build full path from GVR
+	path := "/apis/" + c.gvr.Group + "/" + c.gvr.Version
+	if namespace != "" {
+		path = path + "/namespaces/" + namespace
+	}
+	return path + "/" + c.gvr.Resource
 }
 
 // GVK returns the GroupVersionKind for this client.
@@ -235,14 +256,27 @@ func (c Client[T]) Get(ctx context.Context, namespace, name string, opts *metav1
 	if opts == nil {
 		opts = &metav1.GetOptions{}
 	}
-	// Use Raw to get the bytes and unmarshal manually
-	body, err := c.restClient.Get().
-		NamespaceIfScoped(namespace, namespace != "").
-		Resource(c.gvr.Resource).
-		Name(name).
-		VersionedParams(opts, scheme.ParameterCodec).
-		Do(ctx).
-		Raw()
+
+	var body []byte
+	var err error
+	if c.isCRD() {
+		// CRD: Use AbsPath
+		path := c.resourcePath(namespace) + "/" + name
+		body, err = c.restClient.Get().
+			AbsPath(path).
+			VersionedParams(opts, scheme.ParameterCodec).
+			Do(ctx).
+			Raw()
+	} else {
+		// Built-in: Use Resource()
+		body, err = c.restClient.Get().
+			NamespaceIfScoped(namespace, namespace != "").
+			Resource(c.gvr.Resource).
+			Name(name).
+			VersionedParams(opts, scheme.ParameterCodec).
+			Do(ctx).
+			Raw()
+	}
 	if err != nil {
 		var zero T
 		return zero, err
@@ -410,15 +444,28 @@ func (c Client[T]) UpdateStatus(ctx context.Context, namespace string, t T, opts
 		}
 	}
 
-	body, err := c.restClient.Put().
-		NamespaceIfScoped(namespace, namespace != "").
-		Resource(c.gvr.Resource).
-		Name(meta.Name).
-		SubResource("status").
-		VersionedParams(opts, scheme.ParameterCodec).
-		Body(t).
-		Do(ctx).
-		Raw()
+	var body []byte
+	if c.isCRD() {
+		// CRD: Use AbsPath for the full resource path
+		path := c.resourcePath(namespace) + "/" + meta.Name + "/status"
+		body, err = c.restClient.Put().
+			AbsPath(path).
+			VersionedParams(opts, scheme.ParameterCodec).
+			Body(t).
+			Do(ctx).
+			Raw()
+	} else {
+		// Built-in: Use Resource()
+		body, err = c.restClient.Put().
+			NamespaceIfScoped(namespace, namespace != "").
+			Resource(c.gvr.Resource).
+			Name(meta.Name).
+			SubResource("status").
+			VersionedParams(opts, scheme.ParameterCodec).
+			Body(t).
+			Do(ctx).
+			Raw()
+	}
 	if err != nil {
 		var zero T
 		return zero, err
@@ -468,6 +515,13 @@ func (c Client[T]) Inform(ctx context.Context, handler InformerHandler[T], opts 
 					listOpts.FieldSelector = opts.ListOptions.FieldSelector
 				}
 			}
+			if c.isCRD() {
+				return c.restClient.Get().
+					AbsPath(c.resourcePath("")).
+					VersionedParams(&listOpts, scheme.ParameterCodec).
+					Do(ctx).
+					Get()
+			}
 			return c.restClient.Get().
 				Resource(c.gvr.Resource).
 				VersionedParams(&listOpts, scheme.ParameterCodec).
@@ -483,6 +537,12 @@ func (c Client[T]) Inform(ctx context.Context, handler InformerHandler[T], opts 
 				if opts.ListOptions.FieldSelector != "" {
 					watchOpts.FieldSelector = opts.ListOptions.FieldSelector
 				}
+			}
+			if c.isCRD() {
+				return c.restClient.Get().
+					AbsPath(c.resourcePath("")).
+					VersionedParams(&watchOpts, scheme.ParameterCodec).
+					Watch(ctx)
 			}
 			return c.restClient.Get().
 				Resource(c.gvr.Resource).
